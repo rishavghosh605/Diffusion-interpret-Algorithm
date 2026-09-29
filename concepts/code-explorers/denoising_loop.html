@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The denoising loop: turning noise into image, fifty times over</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;1,7..72,400&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+window.MathJax={
+  tex:{packages:{"[+]":["html"]},inlineMath:[["\\(","\\)"]],displayMath:[["\\[","\\]"]]},
+  svg:{fontCache:"global"},
+  options:{enableMenu:false},
+  startup:{typeset:false}
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg-full.js"></script>
+<style>
+:root{
+  --paper:#F4EEE4; --ground:#F4EEE4; --card:#FFFBF5; --zone:rgba(255,251,245,.6);
+  --ink:#2B221C; --ink-soft:#4A3D32; --muted:#6A5A4C; --on-ink:#F6EFE3;
+  --line:rgba(43,34,28,.11); --line-strong:rgba(43,34,28,.22);
+  --flame:#C98A1E; --flame-soft:rgba(201,138,30,.16); --flame-ink:#6B4A08;
+  --code-bg:#FFFBF5; --glow:rgba(255,236,200,.55); --dusk:rgba(224,120,74,0);
+  --shadow-lift:0 14px 30px #3424142e,0 2px 6px #34241414;
+  --serif:"Literata","Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --sans:"Figtree",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#1A1512; --ground:#1A1512; --card:#241D19; --zone:rgba(239,229,214,.035);
+    --ink:#EFE5D6; --ink-soft:#D8CAB7; --muted:#AE9E8B; --on-ink:#1A1512;
+    --line:rgba(239,229,214,.09); --line-strong:rgba(239,229,214,.22);
+    --flame:#E9A23B; --flame-soft:rgba(233,162,59,.18); --flame-ink:#F0C77A;
+    --code-bg:#241D19; --shadow-lift:0 14px 30px #00000073;
+  }
+}
+:root[data-theme="dark"],:root[data-scheme="night"]{
+  --paper:#1A1512; --card:#241D19; --zone:rgba(239,229,214,.035);
+  --ink:#EFE5D6; --ink-soft:#D8CAB7; --muted:#AE9E8B; --on-ink:#1A1512;
+  --line:rgba(239,229,214,.09); --line-strong:rgba(239,229,214,.22);
+  --flame:#E9A23B; --flame-soft:rgba(233,162,59,.18); --flame-ink:#F0C77A;
+  --code-bg:#241D19; --shadow-lift:0 14px 30px #00000073;
+}
+:root[data-scheme="day"]{
+  --paper:#F4EEE4; --card:#FFFBF5; --zone:rgba(255,251,245,.6);
+  --ink:#2B221C; --ink-soft:#4A3D32; --muted:#6A5A4C; --on-ink:#F6EFE3;
+  --line:rgba(43,34,28,.11); --line-strong:rgba(43,34,28,.22);
+  --flame:#C98A1E; --flame-soft:rgba(201,138,30,.16); --flame-ink:#6B4A08;
+  --code-bg:#FFFBF5; --shadow-lift:0 14px 30px #3424142e,0 2px 6px #34241414;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px);background:var(--ground)}
+body{margin:0;color:var(--ink);background:var(--ground);font:15px/1.6 var(--serif);min-height:100vh;position:relative}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;background:var(--light,none);z-index:0}
+.wrap{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:40px 24px 64px}
+a{color:inherit;text-decoration-color:var(--line-strong);text-underline-offset:3px}
+a:hover{text-decoration-color:var(--flame)}
+:focus-visible{outline:2px solid var(--flame);outline-offset:2px;border-radius:4px}
+.sans{font-family:var(--sans)}
+code,.mono{font-family:var(--mono);font-size:.9em}
+
+/* header */
+h1{font:500 42px/1.1 var(--serif);letter-spacing:-.012em;margin:0 0 10px}
+.lede{font-size:17px;line-height:1.6;color:var(--ink-soft);max-width:62ch;margin:0 0 10px}
+.meta{font:500 12.5px/1.5 var(--sans);color:var(--muted);margin:0}
+h2{font:600 14.5px/20px var(--sans);margin:0 0 4px;color:var(--ink)}
+.hint{font:400 13.5px/20px var(--sans);color:var(--muted);margin:0 0 14px;max-width:70ch}
+
+/* stitch divider */
+.stitch{display:block;width:100%;height:10px;margin:44px 0 30px;color:var(--line-strong)}
+
+/* guidance switch */
+.bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;margin:28px 0 14px}
+.switch{display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:var(--zone);border:1px solid var(--line)}
+.switch button{font:500 14px/20px var(--sans);border:0;background:transparent;color:var(--muted);padding:5px 14px;border-radius:999px;cursor:pointer;transition:background .18s,color .18s}
+.switch button[aria-pressed="true"]{background:var(--ink);color:var(--on-ink)}
+.switch-label{font:500 12px/16px var(--sans);color:var(--muted);margin-right:8px}
+
+/* main grid */
+.grid{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(0,1fr);gap:16px;align-items:start}
+.side{display:grid;gap:16px;position:sticky;top:calc(16px + env(safe-area-inset-top,0px))}
+@media (max-width:900px){.grid{grid-template-columns:1fr}.side{position:static}}
+.zone{background:var(--zone);border-radius:16px;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px}
+.zone-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:0 0 10px}
+.zone-h span{font:500 12px/16px var(--sans);color:var(--muted)}
+
+/* code */
+.code{padding:10px 0;font:12.5px/1.75 var(--mono);color:var(--ink);background:var(--code-bg)}
+.ln{display:grid;grid-template-columns:44px minmax(0,1fr);padding-right:12px;transition:background .18s}
+.ln .n{color:var(--muted);text-align:right;padding-right:14px;user-select:none;opacity:.8}
+.ln .t{white-space:pre-wrap;word-break:break-word}
+.ln.lit{background:var(--flame-soft)}
+.kw{color:var(--muted);font-weight:600}
+.str,.com{color:var(--muted)}
+.com{font-style:italic}
+.tok{cursor:pointer;border-radius:4px;padding:0 1px;background-image:linear-gradient(currentColor,currentColor);background-size:100% 1px;background-repeat:no-repeat;background-position:0 100%;transition:background-color .15s,color .15s}
+.tok.eng{background-image:linear-gradient(var(--line-strong),var(--line-strong))}
+.tok.on{background-color:var(--flame-soft);color:var(--flame-ink);background-image:none}
+.tok.pin{background-color:var(--flame-soft);color:var(--flame-ink);background-image:none;box-shadow:inset 0 -2px 0 var(--flame)}
+
+/* math rows */
+.mrows{padding:6px 14px}
+.mrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:8px 6px;border-radius:8px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .18s}
+.mrow:last-child{border-bottom:0}
+.mrow.lit{background:var(--flame-soft)}
+.mrow .where{font:500 12px/16px var(--sans);color:var(--muted);white-space:nowrap}
+.mrow .eq{overflow-x:auto;overflow-y:hidden}
+.sigcap{font:400 13.5px/20px var(--sans);color:var(--muted);padding:2px 20px 12px}
+mjx-container{color:var(--ink)}
+mjx-container[display="true"]{margin:.3em 0 !important;text-align:left !important}
+mjx-container [class^="s-"],mjx-container [class*=" s-"]{cursor:pointer}
+mjx-container g.on{fill:var(--flame-ink)}
+mjx-container g.on use,mjx-container g.on path,mjx-container g.on rect{fill:var(--flame-ink);stroke:var(--flame);stroke-width:26px}
+
+/* inspector */
+.insp{padding:16px 18px 18px}
+.insp .panel{display:none}
+.insp .panel.show{display:block}
+.ih{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;margin-bottom:2px}
+.ih .cn{font:600 15px/1.4 var(--mono);color:var(--ink);word-break:break-word}
+.ih .arrow{font:500 13px var(--sans);color:var(--muted)}
+.kind{font:500 12px/16px var(--sans);color:var(--muted);margin:0 0 12px}
+.f{margin-top:12px}
+.f h3{font:600 13px/18px var(--sans);color:var(--muted);margin:0 0 3px}
+.f p{margin:0;font-size:15px;line-height:1.55}
+.looks{font:12.5px/1.6 var(--mono);background:var(--zone);border:1px solid var(--line);border-radius:8px;padding:8px 10px;white-space:pre-wrap}
+.viz{display:flex;gap:12px;align-items:center;margin-top:8px}
+.viz canvas{width:88px;height:88px;image-rendering:pixelated;border-radius:6px;border:1px solid var(--line);flex:none}
+.viz span{font:400 13px/18px var(--sans);color:var(--muted)}
+.note{margin-top:12px;padding:8px 12px;border-radius:8px;background:var(--flame-soft);color:var(--flame-ink);font:400 13.5px/20px var(--sans)}
+.none{font-style:italic;color:var(--muted)}
+
+/* algorithm */
+.algo{padding:6px 0}
+.arow{display:grid;grid-template-columns:28px minmax(0,1.2fr) minmax(0,1fr);gap:4px 14px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line)}
+.arow:last-child{border-bottom:0}
+.arow .k{font:500 12px var(--sans);color:var(--muted)}
+.arow .eq{overflow-x:auto;overflow-y:hidden}
+.arow .map{font:400 13.5px/20px var(--sans);color:var(--ink-soft)}
+.arow.here{background:var(--flame-soft)}
+.arow.here .map{color:var(--flame-ink);font-weight:500}
+@media (max-width:640px){.arow{grid-template-columns:24px minmax(0,1fr)}.arow .map{grid-column:2}}
+.fine{font:400 13.5px/20px var(--sans);color:var(--muted);margin:12px 0 0;max-width:72ch}
+
+/* derivations */
+details{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:10px}
+summary{list-style:none;cursor:pointer;padding:14px 18px;display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:baseline}
+summary::-webkit-details-marker{display:none}
+summary .num{font:500 20px/1 var(--serif);color:var(--flame-ink)}
+summary .q{font:500 17px/1.45 var(--serif)}
+summary .open{font:500 12px/16px var(--sans);color:var(--muted);white-space:nowrap}
+details[open] summary .open::after{content:"Close"}
+details:not([open]) summary .open::after{content:"Try it on paper, then open"}
+.dbody{padding:0 18px 18px 56px}
+@media (max-width:640px){.dbody{padding:0 14px 16px}summary{grid-template-columns:24px minmax(0,1fr)}summary .open{grid-column:2}}
+ol.steps{list-style:none;counter-reset:s;padding:0;margin:0}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:26px minmax(0,1fr);gap:0 8px;padding:7px 0;border-bottom:1px dashed var(--line)}
+ol.steps li::before{content:counter(s);font:500 12.5px/2 var(--sans);color:var(--muted)}
+ol.steps .eq{overflow-x:auto;overflow-y:hidden}
+ol.steps .why{grid-column:2;font:400 13.5px/19px var(--sans);color:var(--muted)}
+.answer{margin-top:14px;padding:12px 14px;border-radius:10px;background:var(--zone);border:1px solid var(--line)}
+.answer h3{font:600 13px/18px var(--sans);color:var(--muted);margin:0 0 4px}
+.answer p{margin:0 0 4px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.chip{font:500 12px/16px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:5px 11px;border-radius:999px;cursor:pointer}
+.chip:hover{border-color:var(--flame)}
+
+/* project + whole */
+.project p{max-width:66ch;margin:0 0 10px;font-size:16px}
+.whole{overflow-x:auto;padding:8px 4px}
+.prov{font:400 12.5px/19px var(--sans);color:var(--muted);max-width:80ch}
+.prov p{margin:0 0 6px}
+.closer{display:none}
+@media (max-width:900px){
+  .inspzone{position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));max-height:52vh;overflow:auto;z-index:5;background:var(--card);box-shadow:var(--shadow-lift);border-radius:22px;padding:8px;transform:translateY(115%);transition:transform .25s ease;visibility:hidden}
+  .inspzone.open{transform:none;visibility:visible}
+  .inspzone .card{border:0}
+  .closer{display:block;margin:4px 8px 0 auto;font:500 13px/18px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:4px 12px;border-radius:999px;cursor:pointer}
+  .wrap{padding-bottom:120px}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none !important}}
+/* caller bar */
+.callbar{margin-top:26px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;padding:12px 16px;border-radius:16px;background:var(--zone)}
+.callbar p{margin:0;font-size:15.5px;max-width:64ch}
+.openflow{font:500 14px/20px var(--sans);border:0;background:var(--ink);color:var(--on-ink);padding:7px 16px;border-radius:999px;cursor:pointer}
+.flowbtn{margin-top:8px;font:500 13px/18px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:5px 12px;border-radius:999px;cursor:pointer}
+.flowbtn:hover{border-color:var(--flame)}
+
+/* flowchart dialog */
+dialog.fc{border:0;padding:0;border-radius:22px;background:var(--card);color:var(--ink);box-shadow:var(--shadow-lift);width:min(760px,calc(100vw - 24px));max-height:calc(100vh - 32px);overflow:hidden}
+dialog.fc::backdrop{background:rgba(26,21,18,.42)}
+dialog.fc[open]{animation:fcin .2s ease}
+@keyframes fcin{from{opacity:0;transform:translateY(8px) scale(.99)}to{opacity:1;transform:none}}
+.fc-top{position:sticky;top:0;z-index:3;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:18px 20px 12px;background:var(--card);border-bottom:1px solid var(--line)}
+.fc-top h2{font:500 21px/1.3 var(--serif);margin:0}
+.fc-top p{margin:4px 0 0;font:400 13.5px/20px var(--sans);color:var(--muted)}
+.fc-top button{flex:none;font:500 13px/18px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:5px 12px;border-radius:999px;cursor:pointer}
+.fc-body{overflow:auto;max-height:calc(100vh - 150px);padding:18px 20px 26px}
+.fc-list{position:relative;display:flex;flex-direction:column;align-items:stretch;max-width:560px;margin:0 auto}
+.fnode{position:relative;background:var(--card);border:1px solid var(--line-strong);border-radius:10px;padding:9px 12px;cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%;transition:opacity .2s,border-color .2s,background .2s}
+.fnode:hover{border-color:var(--flame)}
+.fnode .ft{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.fnode .ft b{font:600 14px/19px var(--sans)}
+.fnode .ft span{font:500 11.5px/15px var(--sans);color:var(--muted);white-space:nowrap}
+.fnode .fd{display:block;font:400 14px/1.5 var(--serif);color:var(--ink-soft);margin-top:3px}
+.fnode .fmore{display:none;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);font:400 13px/19px var(--sans);color:var(--ink-soft)}
+.fnode.expanded .fmore{display:block}
+.fnode .fmore b{font-weight:600;color:var(--ink)}
+.fnode .hops{display:none;margin-top:8px}
+.fnode .hop{display:grid;grid-template-columns:22px minmax(0,1fr);gap:2px 8px;align-items:start;padding:5px 0;border-top:1px dashed var(--line)}
+.fnode .hop i{font:600 11.5px/20px var(--sans);font-style:normal;text-align:center;border-radius:999px;background:var(--flame-soft);color:var(--flame-ink);width:20px;height:20px}
+.fnode .hop code{display:block;font:12px/1.5 var(--mono);color:var(--ink);word-break:break-word}
+.fnode .hop span{grid-column:2;font:400 12.5px/17px var(--sans);color:var(--ink-soft)}
+.fc-list.tracing .fnode{opacity:.42}
+.fc-list.tracing .fnode.lit{opacity:1;border-color:var(--flame);background:var(--card)}
+.fc-list.tracing .fnode.lit .hops{display:block}
+.fnode.me{background:var(--flame-soft);border-color:transparent}
+.fc-list.tracing .fnode.me:not(.lit){background:var(--flame-soft)}
+.fconn{align-self:center;width:1.5px;height:20px;background:var(--line-strong);position:relative;flex:none}
+.fconn::after{content:"";position:absolute;left:50%;bottom:-1px;width:7px;height:7px;border-right:1.5px solid var(--line-strong);border-bottom:1.5px solid var(--line-strong);transform:translateX(-50%) rotate(45deg)}
+.fgroup{position:relative;border:1.5px solid var(--line-strong);border-radius:16px;padding:10px 10px 12px;background:var(--zone);display:flex;flex-direction:column}
+.fgroup.me{border-color:var(--flame);background:var(--flame-soft)}
+.fgroup > .fnode.head{margin-bottom:10px}
+.fgroup .kids{display:flex;flex-direction:column;margin:0 0 0 18px}
+.fgroup .kids .fnode{padding:7px 10px}
+.fgroup .kids .fconn{height:14px}
+.loopback{position:absolute;right:-17px;top:62px;bottom:28px;width:14px;border:1.5px dashed var(--muted);border-left:0;border-radius:0 12px 12px 0;opacity:.8}
+.loopback span{position:absolute;right:-6px;top:50%;transform:translate(100%,-50%);font:600 11.5px/15px var(--sans);color:var(--muted);white-space:nowrap}
+.fc-legend{font:400 13px/19px var(--sans);color:var(--muted);max-width:560px;margin:0 auto 14px}
+@media (max-width:640px){.fgroup .kids{margin-left:8px}.loopback{display:none}.fc-body{padding:14px 12px 22px}}
+@media (prefers-reduced-motion: reduce){dialog.fc[open]{animation:none}}
+
+/* glossary + notation */
+.glh{font:600 14.5px/20px var(--sans);margin:22px 0 2px}
+.glsub{font:400 13.5px/20px var(--sans);color:var(--muted);margin:0 0 8px;max-width:70ch}
+dl.terms dt.flash,dl.terms dt.flash + dd{background:var(--flame-soft)}
+dl.terms dt,dl.terms dd{transition:background .4s}
+.gl{color:inherit;text-decoration:underline dotted var(--muted);text-underline-offset:3px;cursor:pointer}
+.gl:hover{text-decoration-color:var(--flame)}
+dl.terms{display:grid;grid-template-columns:minmax(150px,220px) minmax(0,1fr);gap:0;margin:10px 0 0;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+dl.terms dt,dl.terms dd{margin:0;padding:10px 14px;border-bottom:1px solid var(--line)}
+dl.terms dt{font:600 13.5px/19px var(--sans)}
+dl.terms dd{font-size:15px}
+dl.terms dt:last-of-type,dl.terms dd:last-of-type{border-bottom:0}
+@media (max-width:640px){dl.terms{grid-template-columns:1fr}dl.terms dt{border-bottom:0;padding-bottom:0}}
+.ntable{overflow-x:auto}
+.ntable table{border-collapse:collapse;width:100%;min-width:620px;font-size:14.5px}
+.ntable th,.ntable td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--line)}
+.ntable th{font:600 12.5px/17px var(--sans);color:var(--muted)}
+.ntable tr:last-child td{border-bottom:0}
+.ntable td:first-child{font:500 13.5px/19px var(--sans)}
+.eqref{font:500 11.5px/15px var(--sans);color:var(--muted);display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Undoing the noise, fifty times over</h1>
+  <p class="lede">The denoising loop turns \(x_T\) into \(z_0\) by asking the UNet the same question fifty times: what noise is in here right now. Everything else in the pipeline exists to set this loop up or to read its result.</p>
+  <p class="meta">Stage B of your <a href="https://claude.ai/artifact/MnpGyn4QjAEuY82bKTgBTF" target="_blank" rel="noopener">SD 1.5 X-Ray</a>, the denoising loop. diffusers v0.40.0, <a href="https://github.com/huggingface/diffusers/blob/v0.40.0/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py#L1028-L1082" target="_blank" rel="noopener">pipeline_stable_diffusion.py lines 1028 to 1082</a>. Notation follows the survey by Fuest et al. (2024).</p>
+</header>
+
+<div class="callbar">
+  <p>Called once by <code>__call__</code>, as step 7 (line 1028), right after <code>prepare_latents</code> (step 5) and <code>prepare_extra_step_kwargs</code> (step 6) have both returned. The flowchart shows what comes before it, what comes after, and why it sits there.</p>
+  <button class="openflow" id="openflow">Open the flowchart</button>
+</div>
+
+<div class="bar">
+  <p class="hint" style="margin:0">Hover or tap a name in the code, or a symbol in the math. Its partner lights up on the other side.</p>
+  <div><span class="switch-label">Guidance</span><span class="switch" role="group" aria-label="Guidance">
+    <button data-g="on" aria-pressed="true">On, scale 7.5</button>
+    <button data-g="off" aria-pressed="false">Off, scale 1.0</button>
+  </span></div>
+</div>
+
+<div class="grid">
+  <div class="zone">
+    <div class="zone-h"><h2>The code</h2><span>as it is at v0.40.0</span></div>
+    <div class="card code" id="code"></div>
+  </div>
+  <div class="side">
+    <div class="zone">
+      <div class="zone-h"><h2>The same lines, in math</h2><span>tap a row to see its lines</span></div>
+      <div class="card">
+        <div class="mrows" id="mrows"></div>
+        <div class="sigcap" id="sigcap"></div>
+      </div>
+    </div>
+    <div class="zone inspzone" id="inspzone">
+      <button class="closer" id="closer" aria-label="Close details">Close</button>
+      <div class="card insp" id="insp" aria-live="polite"></div>
+    </div>
+  </div>
+</div>
+
+<dialog class="fc" id="fc" aria-labelledby="fctitle">
+  <div class="fc-top"><div><h2 id="fctitle">How __call__ runs</h2><p id="fchint"></p></div><button id="fcclose">Close</button></div>
+  <div class="fc-body"><p class="fc-legend" id="fclegend"></p><div class="fc-list" id="fclist"></div></div>
+</dialog>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="9 6 12 6 8 7 11 6" fill="none"/></svg>
+
+<section>
+  <h2>Where it sits in the sampling algorithm</h2>
+  <p class="hint">Ho et al. (2020), Algorithm 2, written in the survey's notation. This page is most of this algorithm in code: the loop header, the noise prediction, and the call that turns it into the next latent.</p>
+  <div class="card algo" id="algo"></div>
+  <p class="fine">Row 4 (the mean formula) happens inside <code>self.scheduler.step(...)</code>, not on this page; derivation 3 below opens it up. PNDM (the default), DDIM and Euler all reach row 5 by their own route, computed from the same \(\epsilon_\theta\) this page produces.</p>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="11 6 8 6 12 7 9 6" fill="none"/></svg>
+
+<section>
+  <h2>Derive it on paper</h2>
+  <p class="hint">The first two are this stage's checkpoint questions from the X-Ray. The third goes one level down, into the call this page treats as a black box.</p>
+  <div id="ders"></div>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="8 6 11 7 9 6 12 6" fill="none"/></svg>
+
+<section class="project">
+  <h2>What this means for your project</h2>
+  <p style="margin-top:8px">Only two tensors survive from one iteration to the next: <code>t</code> and <code>latents</code>. <code>prompt_embeds</code>, built once in Stage A, is read fifty times and never written. That is the whole reason swapping the conditioning is a single-point intervention: nothing about this loop's control flow has to change, only what line 1045 hands the UNet.</p>
+  <p>The guidance switch above is the same shape of intervention, one level cruder: it does not touch what the UNet is asked, only how its two answers (with and without the prompt) are combined afterwards, at line 1055.</p>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="10 6 9 7 12 6 8 6" fill="none"/></svg>
+
+<section>
+  <h2>Seen whole</h2>
+  <p class="hint">Pure noise on the left, the clean latent on the right. This loop is the middle term, run fifty times.</p>
+  <div class="card whole">\[\underbrace{x_T\sim\pi(x_T)}_{\texttt{prepare\_latents}}\ \xrightarrow{\ \epsilon_\theta(x_t,t;\,\texttt{prompt\_embeds}),\ \times 50\ }\ \underbrace{z_0}_{\texttt{denoising loop}}\ \xrightarrow{\ \mathcal D(\cdot\,/\,0.18215)\ }\ \hat x\]</div>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="9 7 12 6 8 6 11 6" fill="none"/></svg>
+
+<section>
+  <h2>Terms on this page</h2>
+  <p class="hint">Each term means exactly one thing. Underlined terms elsewhere on the page link here.</p>
+  <h3 class="glh">Code terms</h3><p class="glsub">Names for places in the code. Each points at exactly one location.</p>
+  <dl class="terms">
+    <dt id="gl-call">__call__</dt><dd><code>StableDiffusionPipeline.__call__</code>, line 780. What runs when you write <code>pipe(prompt)</code>. Its code comments number its steps 0 to 7.</dd>
+    <dt id="gl-loop">Denoising loop</dt><dd>Step 7 of <code>__call__</code>, lines 1028 to 1082: <code>for i, t in enumerate(timesteps)</code>. This page. Runs <code>num_inference_steps</code> times, 50 by default.</dd>
+    <dt id="gl-preplat">prepare_latents</dt><dd>Step 5, lines 694 to 714, a separate page. Returns the \(x_T\) this loop starts from.</dd>
+    <dt id="gl-unetfwd">UNet forward</dt><dd><code>self.unet(...)</code> at line 1042, inside the denoising loop. Returns the raw noise prediction, before guidance.</dd>
+    <dt id="gl-scheduler">Scheduler</dt><dd>The object at <code>pipe.scheduler</code>, a PNDMScheduler by default. It owns the timesteps, <code>init_noise_sigma</code>, <code>scale_model_input</code> and <code>step</code>.</dd>
+    <dt id="gl-schedstep">Scheduler step</dt><dd><code>self.scheduler.step(...)</code> at line 1062, inside the denoising loop. Turns \(x_t\) into \(x_{t-1}\); this page treats it as one call, derivation 3 opens it.</dd>
+    <dt id="gl-sampalg">Sampling algorithm</dt><dd>The reverse process written as a procedure: Ho et al., Algorithm 2. This page is most of that algorithm in code.</dd>
+    <dt id="gl-latents"><code>latents</code> and \(x_t\)</dt><dd><code>latents</code> is the variable; \(x_t\) is the math. The same Python object holds \(x_T\) on the first iteration's input, then \(x_{49},\dots,x_0=z_0\), overwritten in place by reassignment each time.</dd>
+    <dt id="gl-callback">callback_on_step_end</dt><dd>An optional hook, <code>None</code> by default, called at the end of every iteration. Can rewrite <code>latents</code>, <code>prompt_embeds</code> or <code>negative_prompt_embeds</code> before the next one starts.</dd>
+    <dt id="gl-seed">Seed and generator</dt><dd>A seed is the integer given to <code>torch.Generator(...).manual_seed(seed)</code>. Read once at <code>prepare_latents</code>, and again by <code>prepare_extra_step_kwargs</code> for schedulers (like DDIM with \(\eta>0\)) that add fresh noise inside the loop.</dd>
+  </dl>
+  <h3 class="glh">Diffusion terms</h3><p class="glsub">The ideas the math is built from.</p>
+  <dl class="terms">
+    <dt id="gl-forward">Forward process</dt><dd>Adds Gaussian noise to clean data, a little at a time, over \(T=1000\) steps. Survey Eq. 1 to 3. Used to train the UNet, and to derive the reverse step (derivation 3); <code>__call__</code> never runs it directly.</dd>
+    <dt id="gl-reverse">Reverse process</dt><dd>The learned way back, from noise to data: \(p_\theta(x_{t-1}\mid x_t)\), survey p. 2 and Eq. 6. The denoising loop runs it, fifty times.</dd>
+    <dt id="gl-prior">Prior</dt><dd>\(\pi(x_T)\), the distribution the reverse process starts from: \(\mathcal N(0,I)\) in the survey. <code>prepare_latents</code> draws one sample of it, before this loop begins.</dd>
+    <dt id="gl-epspred">Noise prediction</dt><dd>\(\epsilon_\theta(x_t,t)\): the UNet's guess of the noise inside \(x_t\). SD 1.5 is trained to predict it, survey Eq. 7. Line 1042 computes it.</dd>
+    <dt id="gl-cfg">Classifier-free guidance (CFG)</dt><dd>Run the UNet with and without the prompt and push the result away from the unconditional one (Ho and Salimans 2021; survey Eq. 13). Lines 1053 to 1055, and the point of the guidance switch above.</dd>
+    <dt id="gl-rescale">guidance_rescale</dt><dd>An optional fix for washed-out images at high guidance (Lin et al. 2023), in <code>rescale_noise_cfg</code>, called at lines 1057 to 1059. <code>0.0</code> by default, so this branch does not run unless you ask for it.</dd>
+    <dt id="gl-snr">SNR and terminal SNR</dt><dd>Signal-to-noise ratio, \(\bar\alpha_t/(1-\bar\alpha_t)\): how much image is left at timestep \(t\). Relevant to why <code>guidance_rescale</code> exists (Lin et al. 2023).</dd>
+    <dt id="gl-eta">\(\eta\) (eta)</dt><dd>A DDIM-only knob (Song, Meng and Ermon 2021), 0 by default in <code>__call__</code>. \(\eta=0\) makes the reverse step deterministic; \(\eta=1\) recovers DDPM's fresh noise at every step. Packed into <code>extra_step_kwargs</code> at step 6, read inside <code>self.scheduler.step</code>.</dd>
+  </dl>
+  <h3 class="glh">Schedulers</h3><p class="glsub">Classes in <code>diffusers/schedulers</code>. Each one turns \(\epsilon_\theta\) into the next \(x_{t-1}\) in its own way, inside line 1062; the trained UNet is the same for all of them.</p>
+  <dl class="terms">
+    <dt id="gl-ddpm">DDPM</dt><dd>Denoising Diffusion Probabilistic Models (Ho et al. 2020). The original model and sampler, Algorithm 2 on this page. Adds fresh noise at every step and is meant for all 1000 steps. Class: <code>DDPMScheduler</code>.</dd>
+    <dt id="gl-ddim">DDIM</dt><dd>Denoising Diffusion Implicit Models (Song, Meng and Ermon 2021). Same trained UNet, but a step that can be deterministic (\(\eta=0\)) and works with about 50 steps. Class: <code>DDIMScheduler</code>.</dd>
+    <dt id="gl-pndm">PNDM</dt><dd>Pseudo Numerical methods for Diffusion Models (Liu et al. 2022). SD 1.5's default. Treats sampling as solving a differential equation and reuses earlier \(\epsilon_\theta\) to take better steps. Accepts neither <code>eta</code> nor <code>generator</code>, so <code>extra_step_kwargs</code> is empty for it. Class: <code>PNDMScheduler</code>.</dd>
+  </dl>
+  <h3 class="glh">Models and tools</h3><p class="glsub">The other parts of Stable Diffusion that this page mentions.</p>
+  <dl class="terms">
+    <dt id="gl-vae">VAE</dt><dd>Variational autoencoder. An encoder \(\mathcal E\) and decoder \(\mathcal D\). SD 1.5's latents are scaled by 0.18215; <code>vae.decode</code> undoes it after this loop ends, at line 1085.</dd>
+    <dt id="gl-unet">UNet</dt><dd>The network that predicts \(\epsilon_\theta\): <code>UNet2DConditionModel</code>, called once per iteration at line 1042.</dd>
+    <dt id="gl-clip">CLIP</dt><dd>The text encoder (Radford et al. 2021). Turns the prompt into <code>prompt_embeds</code>, 77 × 768, once, in Stage A, before this loop starts.</dd>
+    <dt id="gl-fp16">fp16</dt><dd>16-bit floating point, <code>torch.float16</code>. The usual precision for running SD 1.5's UNet on a GPU.</dd>
+  </dl>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="11 6 9 6 12 7 8 6" fill="none"/></svg>
+
+<section>
+  <details>
+    <summary><span class="num">§</span><span class="q">Notation: where this page, the survey and diffusers differ</span><span class="open"></span></summary>
+    <div class="dbody ntable">
+      <table>
+        <tr><th>Item</th><th>Survey (Fuest et al. 2024)</th><th>This page</th><th>Why it matters</th></tr>
+        <tr><td>Noise prediction</td><td>\(\epsilon_\theta(x_t,t)\), Eq. 7</td><td>Same</td><td>Line 1042's raw output, before guidance combines it.</td></tr>
+        <tr><td>Reverse step</td><td>\(\mathcal N(\mu_\theta(x_t,t),\Sigma_\theta)\), Eq. 6</td><td>Same</td><td>Ho et al. write the noise term as \(\sigma_t z\); this page uses \(\Sigma_\theta\) throughout its series to avoid clashing with the VE noise level \(\sigma\).</td></tr>
+        <tr><td>Guidance weight</td><td>\((1+w)\,\epsilon_\theta(x_t,c)-w\,\epsilon_\theta(x_t,\phi)\), Eq. 13</td><td>diffusers' \(\epsilon_u+s(\epsilon_c-\epsilon_u)\), line 1055</td><td>Same formula, rearranged: \(s=1+w\). The code's default <code>guidance_scale</code> 7.5 is the survey's \(w=6.5\). Derivation 2 works in the code's own \(s\), which is what <code>guidance_scale</code> actually is.</td></tr>
+        <tr><td>Possible slip in the survey</td><td>Eq. 5's \(x_t\) coefficient</td><td>\(\sqrt{\alpha_t}\), matching Ho et al.</td><td>Read from the PDF's text, Eq. 5 has \(\sqrt{\bar\alpha_{t-1}}\) where Ho et al. (and derivation 3 below) have \(\sqrt{\alpha_t}\). Check the printed version; derivation 3 uses the form that correctly reduces to Eq. 6.</td></tr>
+      </table>
+    </div>
+  </details>
+</section>
+
+<section class="prov" style="margin-top:28px">
+  <h2>What is checked, and how</h2>
+  <p>Code and line numbers: read from diffusers v0.40.0, downloaded from PyPI in this environment (<code>pip download diffusers==0.40.0</code>, then read with <code>sed -n</code>) rather than recalled; they match the pinned links used by the rest of this page's series. Defaults (<code>guidance_scale=7.5</code>, <code>eta=0.0</code>, <code>guidance_rescale=0.0</code>): read from the <code>__call__</code> signature at lines 786 to 804.</p>
+  <p>Worked out from the source but not run: derivation 3's substitution step, algebra done on paper from the survey's own equations, not executed as code. The claim that <code>extra_step_kwargs</code> is empty for PNDM: read from <code>prepare_extra_step_kwargs</code> introspecting <code>self.scheduler.step</code>'s signature (lines 608 to 623) together with <code>PNDMScheduler.step</code>'s signature; not run against a loaded pipeline here.</p>
+  <p>Papers: Fuest et al. 2024 (notation), Ho et al. 2020 (Algorithm 2, DDPM), Ho and Salimans 2021 (classifier-free guidance), Song, Meng and Ermon 2021 (DDIM, \(\eta\)), Lin et al. 2023 (terminal SNR, <code>guidance_rescale</code>).</p>
+</section>
+
+</div>
+
+<script>
+
+(function(){
+"use strict";
+var R=String.raw;
+var guide="on";
+
+/* ---------------- tokens: code name <-> math ---------------- */
+var T={
+ loop:{name:"# 7. Denoising loop",sym:R`x_T\to z_0`,kind:"The step this page is",syms:[],rows:["inp","unet","cfg","step"],
+  looks:function(){return "In: latents = x_T, prompt_embeds, timesteps (50 of them).\nOut: latents = z_0, after 50 iterations."},
+  math:R`<p>Rows 2 to 5 of Ho et al.'s Algorithm 2, run once per timestep. Survey p. 2.</p>`,
+  flow:"Called once by __call__, at step 7, line 1028, right after prepare_latents (step 5) and prepare_extra_step_kwargs (step 6). What it leaves in latents is read once, by vae.decode at line 1085."},
+ t:{name:"t",sym:"t",kind:"A number, the current timestep",syms:["s-t"],rows:["inp","unet"],
+  looks:function(){return "A 0-d torch.Tensor, e.g. tensor(981) on iteration 0, tensor(1) on iteration 49 (PNDM's default schedule, 50 steps)"},
+  math:R`<p>Indexes which of the 1000 trained noise levels this iteration is at. Read off <code>timesteps</code>, built by <code>retrieve_timesteps</code> at step 4.</p>`,
+  flow:"Comes from enumerate(timesteps), step 4's output. Goes to scale_model_input (line 1039), the UNet forward (line 1044) and the scheduler step (line 1062), unchanged, in the same iteration."},
+ interrupt:{name:"self.interrupt",sym:null,kind:"Engineering only",syms:[],rows:[],
+  looks:function(){return "False, unless something else sets pipe._interrupt = True mid-run"},
+  math:"<p class='none'>No math here. A cooperative cancellation flag some UIs use to stop generation early.</p>",
+  flow:"Checked at the very top of every iteration; when true, the rest of the iteration's body is skipped with continue."},
+ cfg_flag:{name:"self.do_classifier_free_guidance",sym:null,kind:"A flag that picks the branch",syms:[],rows:["inp","cfg"],
+  looks:function(){return guide==="on"?"True  (guidance_scale 7.5 > 1, and the UNet has no time_cond_proj_dim)":"False  (guidance_scale 1.0 is not > 1)"},
+  math:"<p class='none'>No math of its own; it selects which case of the equation on the right applies.</p>",
+  flow:"A property computed from self._guidance_scale (your guidance_scale argument) and the UNet's config. Read three times per iteration: lines 1037, 1053 and 1057.",
+  note:function(){return guide==="on"?"With this on, the batch doubles at line 1037 and the guidance combine at line 1055 runs.":"With this off, line 1037 falls through to else latents (no doubling), and the whole guidance combine block (1053 to 1055) is skipped."}},
+ cat_batch:{name:"torch.cat([latents] * 2)",sym:R`\operatorname{cat}(x_t,x_t)`,kind:"A call that doubles the batch",syms:[],rows:["inp"],
+  looks:function(){return guide==="on"?"(2, 4, 64, 64): two identical copies of the (1, 4, 64, 64) latent, stacked on the batch axis":"not evaluated; do_classifier_free_guidance is False, so latents is used instead"},
+  math:R`<p>Stacks the same latent twice so one UNet call can answer both halves of Eq. 13 at once. Same idea as the prompt_embeds concatenation in Stage A, line 978.</p>`,
+  flow:"Built fresh every iteration from the current latents. Feeds only into latent_model_input; never stored."},
+ latent_model_input:{name:"latent_model_input",sym:R`x_t^{\text{in}}`,kind:"A tensor",syms:["s-xin"],rows:["inp","unet"],
+  looks:function(){return guide==="on"?"(2, 4, 64, 64), float16":"(1, 4, 64, 64), float16"},
+  math:R`<p>\(x_t^{\text{in}}\in\mathbb R^{(1\text{ or }2)B\times4\times64\times64}\): what the UNet actually sees, after batching for guidance and after the scheduler's own scaling.</p>`,
+  flow:"Built at lines 1037 to 1039 from latents. Goes only into the UNet forward, line 1043. Never written back to latents."},
+ scale_model_input:{name:"self.scheduler.scale_model_input",sym:R`x_t^{\text{in}}`,kind:"A call from the scheduler",syms:[],rows:["inp"],
+  looks:function(){return "Identity for PNDM (SD 1.5's default): returns latent_model_input unchanged"},
+  math:R`<p>For VP schedulers (PNDM, DDIM) this is the identity. For VE schedulers (Euler, LMS) it divides by \(\sqrt{\sigma_t^2+1}\), undoing prepare_latents' init_noise_sigma scaling; see that page's derivation 2.</p>`,
+  flow:"Runs on every iteration, whether or not it changes anything; hasattr guards schedulers that lack it."},
+ unet_forward:{name:"self.unet",sym:R`\epsilon_\theta`,kind:"The call this whole loop exists for",syms:["s-unet"],rows:["unet"],viz:"eps",
+  looks:function(){return guide==="on"?"In: (2,4,64,64) + t + (2,77,768).\nOut: (2,4,64,64), float16":"In: (1,4,64,64) + t + (1,77,768).\nOut: (1,4,64,64), float16"},
+  math:R`<p>\(\hat\epsilon=\epsilon_\theta(x_t^{\text{in}},t;\,\texttt{prompt\_embeds})\), the UNet's guess of the noise inside \(x_t^{\text{in}}\). Survey Eq. 7.</p>`,
+  flow:"Takes latent_model_input, t and prompt_embeds (unchanged since Stage A). Returns the raw noise prediction, stored back into noise_pred.",
+  note:"This is the only place the conditioning tensor touches the latent. The X-Ray's Stage D reads exactly how, inside this call."},
+ prompt_embeds_arg:{name:"prompt_embeds",sym:"c",kind:"The conditioning tensor from Stage A",syms:["s-c"],rows:["unet"],
+  looks:function(){return guide==="on"?"(2, 77, 768): row 0 negative/unconditional, row 1 the real prompt":"(1, 77, 768): the real prompt only"},
+  math:R`<p>Written as \(c\) here for brevity; the survey has no dedicated symbol for text conditioning.</p>`,
+  flow:"Built once in Stage A (encode_prompt), before this loop starts. Read on all 50 iterations. Never reassigned inside the loop, unless a callback_on_step_end chooses to.",
+  note:"The one thing that changes between two different generations at the same seed. Everything else in this loop is shared machinery, which is what derivation 1 is about."},
+ noise_pred:{name:"noise_pred",sym:R`\epsilon_\theta(x_t,t)`,kind:"A tensor, reused across the iteration",syms:["s-eps","s-cfg"],rows:["unet","cfg"],viz:"eps",
+  looks:function(){return guide==="on"?"(2,4,64,64) right after line 1042; (1,4,64,64) after line 1055 combines the two halves":"(1,4,64,64) throughout; lines 1053 to 1059 are skipped"},
+  math:R`<p>Raw at line 1042 (\(\hat\epsilon\)); after guidance (line 1055) it is \(\epsilon_\theta(x_t,t)=\epsilon_u+s(\epsilon_c-\epsilon_u)\), survey Eq. 13 rearranged.</p>`,
+  flow:"Written at 1042, possibly overwritten at 1055 and again at 1059 (guidance_rescale, off by default). Read once, by the scheduler step at line 1062.",
+  note:"Same Python name, three possible values in one iteration. Track which line you are on to know which one you have."},
+ noise_pred_uncond:{name:"noise_pred_uncond",sym:R`\epsilon_u`,kind:"Half of noise_pred, after chunk(2)",syms:["s-epsu"],rows:["cfg"],
+  looks:function(){return guide==="on"?"(1,4,64,64): the UNet's guess with the negative/empty prompt":"not evaluated; do_classifier_free_guidance is False"},
+  math:R`<p>\(\epsilon_u:=\epsilon_\theta(x_t,t;\phi)\), the unconditional half of Eq. 13, where \(\phi\) is the empty or negative prompt.</p>`,
+  flow:"Split off noise_pred by chunk(2) at line 1054. Feeds only into the guidance combine at line 1055."},
+ noise_pred_text:{name:"noise_pred_text",sym:R`\epsilon_c`,kind:"Half of noise_pred, after chunk(2)",syms:["s-epsc"],rows:["cfg"],
+  looks:function(){return guide==="on"?"(1,4,64,64): the UNet's guess with your real prompt":"not evaluated; do_classifier_free_guidance is False"},
+  math:R`<p>\(\epsilon_c:=\epsilon_\theta(x_t,t;c)\), the conditional half of Eq. 13.</p>`,
+  flow:"Split off noise_pred by chunk(2) at line 1054. Feeds the guidance combine at line 1055, and, if guidance_rescale > 0, line 1059."},
+ guidance_scale:{name:"self.guidance_scale",sym:"s",kind:"A number from your call",syms:["s-s"],rows:["cfg"],
+  looks:function(){return guide==="on"?"7.5 (the default)":"1.0"},
+  math:R`<p>\(s\) in \(\epsilon_u+s(\epsilon_c-\epsilon_u)\). The survey's Eq. 13 uses \(w=s-1\), so \(s=7.5\) is the survey's \(w=6.5\); see the notation table and derivation 2.</p>`,
+  flow:"A property reading self._guidance_scale, set once at the top of __call__ from your guidance_scale argument. Read at line 1055, and to compute do_classifier_free_guidance."},
+ guidance_rescale_block:{name:"guidance_rescale / rescale_noise_cfg",sym:null,kind:"An optional fix, off by default",syms:[],rows:[],
+  looks:function(){return "self.guidance_rescale is 0.0 by default, so this branch never runs unless you pass guidance_rescale > 0"},
+  math:"<p class='none'>No math on this page: a heuristic rescaling of noise_pred's variance toward noise_pred_text's, from Lin et al. 2023, section 3.4. Not part of Eq. 13.</p>",
+  flow:"Guarded by do_classifier_free_guidance and guidance_rescale > 0.0 at line 1057; only then does rescale_noise_cfg run and overwrite noise_pred at line 1059.",
+  note:"Fixes over-saturated images at high guidance_scale. Derivation 2's last step is exactly the symptom this exists to treat."},
+ scheduler_step:{name:"self.scheduler.step",sym:null,kind:"The call this page treats as a black box",syms:[],rows:["step"],
+  looks:function(){return "PNDMScheduler.step by default: same signature as every other scheduler's step, different arithmetic inside"},
+  math:R`<p>Computes \(x_{t-1}\sim p_\theta(x_{t-1}\mid x_t)=\mathcal N(\mu_\theta(x_t,t),\Sigma_\theta)\), survey Eq. 6 and p. 2. What it actually does is derivation 3.</p>`,
+  flow:"Takes noise_pred, t, latents and extra_step_kwargs. Returns a tuple; [0] is the new latents, overwriting the old one at line 1062."},
+ extra_step_kwargs:{name:"extra_step_kwargs",sym:null,kind:"A dict built at step 6",syms:[],rows:[],
+  looks:function(){return "{} for PNDM (accepts neither eta nor generator); {'eta': 0.0} or {'eta': 0.0, 'generator': ...} for DDIM"},
+  math:"<p class='none'>No math here. Lets schedulers that need eta or a generator (DDIM's stochastic case, eta > 0) get them without every scheduler sharing one signature.</p>",
+  flow:"Built once, before this loop, by prepare_extra_step_kwargs (step 6, lines 1010 to 1011). Unpacked into every scheduler step call, all 50 iterations."},
+ callback_hook:{name:"callback_on_step_end",sym:null,kind:"An optional hook",syms:[],rows:[],
+  looks:function(){return "None by default (your __call__ argument). When set, it runs once per iteration, after the scheduler step."},
+  math:"<p class='none'>No math here. An escape hatch some techniques (prompt editing mid-generation, some attention-control methods) use to rewrite latents or prompt_embeds between iterations.</p>",
+  flow:"Called at line 1068 with (self, i, t, callback_kwargs); its return can overwrite latents, prompt_embeds and negative_prompt_embeds for the next iteration."},
+ latents_var:{name:"latents",sym:"x_t",kind:"The tensor this whole loop updates",syms:["s-xt","s-xtm1"],rows:["inp","step"],viz:"xT",
+  looks:function(){return "(1, 4, 64, 64), float16, overwritten in place by reassignment 50 times"},
+  math:R`<p>Holds \(x_T\) as this loop's first input, then \(x_{49},\dots,x_1,x_0\); \(x_0=z_0\) is what remains once the loop ends.</p>`,
+  flow:"Arrives from prepare_latents (step 5), holding x_T. Reassigned at line 1062, every iteration. Read by vae.decode, line 1085, once the loop is done.",
+  note:"Same Python name as in prepare_latents; there it was written once. Here it is read and overwritten every iteration."}
+};
+var SYM2TOK={"s-t":"t","s-xin":"latent_model_input","s-unet":"unet_forward","s-c":"prompt_embeds_arg","s-eps":"noise_pred","s-cfg":"noise_pred","s-epsu":"noise_pred_uncond","s-epsc":"noise_pred_text","s-s":"guidance_scale","s-xt":"latents_var","s-xtm1":"latents_var"};
+
+/* ---------------- code ---------------- */
+var CODE=[
+ [1028,"        [[loop|# 7. Denoising loop]]"],
+ [1029,"        num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order"],
+ [1030,"        self._num_timesteps = len(timesteps)"],
+ [1031,"        <k>with</k> self.progress_bar(total=num_inference_steps) <k>as</k> progress_bar:"],
+ [1032,"            <k>for</k> i, [[t|t]] <k>in</k> enumerate(timesteps):"],
+ [1033,"                <k>if</k> [[interrupt|self.interrupt]]:"],
+ [1034,"                    <k>continue</k>"],
+ [1035,""],
+ [1036,"                <c># expand the latents if we are doing classifier free guidance</c>"],
+ [1037,"                [[latent_model_input|latent_model_input]] = [[cat_batch|torch.cat([latents] * 2)]] <k>if</k> [[cfg_flag|self.do_classifier_free_guidance]] <k>else</k> [[latents_var|latents]]"],
+ [1038,"                <k>if</k> hasattr(self.scheduler, <s>\"scale_model_input\"</s>):"],
+ [1039,"                    [[latent_model_input|latent_model_input]] = [[scale_model_input|self.scheduler.scale_model_input]]([[latent_model_input|latent_model_input]], [[t|t]])"],
+ [1040,""],
+ [1041,"                <c># predict the noise residual</c>"],
+ [1042,"                [[noise_pred|noise_pred]] = [[unet_forward|self.unet]]("],
+ [1043,"                    [[latent_model_input|latent_model_input]],"],
+ [1044,"                    [[t|t]],"],
+ [1045,"                    encoder_hidden_states=[[prompt_embeds_arg|prompt_embeds]],"],
+ [1046,"                    timestep_cond=timestep_cond,"],
+ [1047,"                    cross_attention_kwargs=self.cross_attention_kwargs,"],
+ [1048,"                    added_cond_kwargs=added_cond_kwargs,"],
+ [1049,"                    return_dict=<k>False</k>,"],
+ [1050,"                )[0]"],
+ [1051,""],
+ [1052,"                <c># perform guidance</c>"],
+ [1053,"                <k>if</k> [[cfg_flag|self.do_classifier_free_guidance]]:"],
+ [1054,"                    [[noise_pred_uncond|noise_pred_uncond]], [[noise_pred_text|noise_pred_text]] = noise_pred.chunk(2)"],
+ [1055,"                    [[noise_pred|noise_pred]] = noise_pred_uncond + [[guidance_scale|self.guidance_scale]] * (noise_pred_text - noise_pred_uncond)"],
+ [1056,""],
+ [1057,"                <k>if</k> [[cfg_flag|self.do_classifier_free_guidance]] <k>and</k> [[guidance_rescale_block|self.guidance_rescale]] > 0.0:"],
+ [1058,"                    <c># Based on 3.4. in https://huggingface.co/papers/2305.08891</c>"],
+ [1059,"                    [[noise_pred|noise_pred]] = [[guidance_rescale_block|rescale_noise_cfg]](noise_pred, noise_pred_text, guidance_rescale=self.guidance_rescale)"],
+ [1060,""],
+ [1061,"                <c># compute the previous noisy sample x_t -> x_t-1</c>"],
+ [1062,"                [[latents_var|latents]] = [[scheduler_step|self.scheduler.step]](noise_pred, [[t|t]], latents, **[[extra_step_kwargs|extra_step_kwargs]], return_dict=<k>False</k>)[0]"],
+ [1063,""],
+ [1064,"                <k>if</k> [[callback_hook|callback_on_step_end]] <k>is not</k> <k>None</k>:"],
+ [1065,"                    callback_kwargs = {}"],
+ [1066,"                    <k>for</k> k <k>in</k> callback_on_step_end_tensor_inputs:"],
+ [1067,"                        callback_kwargs[k] = locals()[k]"],
+ [1068,"                    callback_outputs = callback_on_step_end(self, i, t, callback_kwargs)"],
+ [1069,""],
+ [1070,"                    latents = callback_outputs.pop(<s>\"latents\"</s>, latents)"],
+ [1071,"                    prompt_embeds = callback_outputs.pop(<s>\"prompt_embeds\"</s>, prompt_embeds)"],
+ [1072,"                    negative_prompt_embeds = callback_outputs.pop(<s>\"negative_prompt_embeds\"</s>, negative_prompt_embeds)"],
+ [1073,""],
+ [1074,"                <c># call the callback, if provided</c>"],
+ [1075,"                <k>if</k> i == len(timesteps) - 1 <k>or</k> ((i + 1) > num_warmup_steps <k>and</k> (i + 1) % self.scheduler.order == 0):"],
+ [1076,"                    progress_bar.update()"],
+ [1077,"                    <k>if</k> callback <k>is not</k> <k>None</k> <k>and</k> i % callback_steps == 0:"],
+ [1078,"                        step_idx = i // getattr(self.scheduler, <s>\"order\"</s>, 1)"],
+ [1079,"                        callback(step_idx, t, latents)"],
+ [1080,""],
+ [1081,"                <k>if</k> XLA_AVAILABLE:"],
+ [1082,"                    xm.mark_step()"]
+];
+var ENG={interrupt:1,scale_model_input:1,extra_step_kwargs:1,callback_hook:1,guidance_rescale_block:1};
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+function line(src){
+  var out="",re=/\[\[(\w+)\|(.+?)\]\]|<k>(.*?)<\/k>|<s>(.*?)<\/s>|<c>(.*?)<\/c>/g,last=0,m;
+  while((m=re.exec(src))){
+    out+=esc(src.slice(last,m.index));
+    if(m[1])out+='<span class="tok'+(ENG[m[1]]?" eng":"")+'" tabindex="0" role="button" data-id="'+m[1]+'">'+esc(m[2])+'</span>';
+    else if(m[3]!==undefined)out+='<span class="kw">'+esc(m[3])+'</span>';
+    else if(m[4]!==undefined)out+='<span class="str">'+esc(m[4])+'</span>';
+    else out+='<span class="com">'+esc(m[5])+'</span>';
+    last=re.lastIndex;
+  }
+  return out+esc(src.slice(last));
+}
+document.getElementById("code").innerHTML=CODE.map(function(l){return '<div class="ln" data-ln="'+l[0]+'"><span class="n">'+l[0]+'</span><span class="t">'+line(l[1])+'</span></div>'}).join("");
+
+/* ---------------- math rows ---------------- */
+var ROWS={
+ inp:{tex:R`\class{s-xin}{x_t^{\text{in}}}=\begin{cases}\operatorname{cat}(\class{s-xt}{x_t},\class{s-xt}{x_t})&\text{guidance on (default)}\\ \class{s-xt}{x_t}&\text{guidance off}\end{cases}`,where:"lines 1032 to 1039",lines:[1032,1039],tok:"latent_model_input"},
+ unet:{tex:R`\class{s-eps}{\hat\epsilon}=\epsilon_\theta\big(\class{s-xin}{x_t^{\text{in}}},\ \class{s-t}{t}\,;\ \class{s-c}{\texttt{prompt\_embeds}}\big)`,where:"lines 1042 to 1050",lines:[1042,1050],tok:"unet_forward"},
+ cfg:{tex:R`\class{s-cfg}{\epsilon_\theta(x_t,t)}=\class{s-epsu}{\epsilon_u}+\class{s-s}{s}\,(\class{s-epsc}{\epsilon_c}-\epsilon_u),\quad(\epsilon_u,\epsilon_c):=\operatorname{chunk}(\hat\epsilon)`,where:"lines 1053 to 1055",lines:[1053,1055],tok:"noise_pred"},
+ step:{tex:R`\class{s-xtm1}{x_{t-1}}\sim p_\theta(x_{t-1}\mid x_t)=\mathcal N\big(\mu_\theta(x_t,t),\ \Sigma_\theta\big)`,where:"line 1062, survey Eq. 6",lines:[1062,1062],tok:"scheduler_step"}
+};
+document.getElementById("mrows").innerHTML=Object.keys(ROWS).map(function(k){return '<div class="mrow" data-row="'+k+'" tabindex="0" role="button"><div class="eq">\\['+ROWS[k].tex+'\\]</div><span class="where">'+ROWS[k].where+'</span></div>'}).join("");
+
+/* ---------------- inspector panels (built once) ---------------- */
+var insp=document.getElementById("insp");
+Object.keys(T).forEach(function(id){
+  var t=T[id],p=document.createElement("div");p.className="panel";p.dataset.id=id;
+  var h='<div class="ih"><span class="cn">'+esc(t.name)+'</span>'+(t.sym?'<span class="arrow">is</span><span>\\('+t.sym+'\\)</span>':'')+'</div>';
+  h+='<p class="kind">'+t.kind+'</p>';
+  h+='<div class="f"><h3>Looks like</h3><div class="looks" data-looks></div>'+(t.viz?'<div class="viz"><canvas width="64" height="64" data-viz="'+t.viz+'"></canvas><span data-vizcap></span></div>':'')+'</div>';
+  h+='<div class="f"><h3>In the math</h3>'+t.math+'</div>';
+  h+='<div class="f"><h3>Comes from, goes to</h3><p>'+esc(t.flow)+'</p><button class="flowbtn" data-flow="'+id+'">Show this on the flowchart</button></div>';
+  if(t.note)h+='<div class="note" data-note></div>';
+  p.innerHTML=h;insp.appendChild(p);
+});
+
+/* ---------------- noise viz ---------------- */
+function rng(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+var noise=new Float32Array(64*64);(function(){var r=rng(981);for(var i=0;i<noise.length;i++){var u=0,v=0;while(!u)u=r();while(!v)v=r();noise[i]=Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}})();
+function hexToRgb(c){var d=document.createElement("div");d.style.color=c;document.body.appendChild(d);var s=getComputedStyle(d).color;d.remove();var m=s.match(/[\d.]+/g);return [+m[0],+m[1],+m[2]]}
+function drawViz(){
+  var ink=hexToRgb(getComputedStyle(document.documentElement).getPropertyValue("--ink").trim()),card=hexToRgb(getComputedStyle(document.documentElement).getPropertyValue("--card").trim());
+  document.querySelectorAll("canvas[data-viz]").forEach(function(cv){
+    var ctx=cv.getContext("2d"),im=ctx.createImageData(64,64);
+    for(var i=0;i<4096;i++){var v=Math.max(-3,Math.min(3,noise[i])),a=(v+3)/6;
+      im.data[i*4]=card[0]+(ink[0]-card[0])*a;im.data[i*4+1]=card[1]+(ink[1]-card[1])*a;im.data[i*4+2]=card[2]+(ink[2]-card[2])*a;im.data[i*4+3]=255}
+    ctx.putImageData(im,0,0);
+    cv.nextElementSibling.textContent="Channel 0, one iteration's noise-shaped tensor (illustrative only: shape and roughness match, values are not from a real run).";
+  });
+}
+
+/* ---------------- dynamic text ---------------- */
+function refreshDynamic(){
+  document.querySelectorAll(".panel").forEach(function(p){
+    var t=T[p.dataset.id];p.querySelector("[data-looks]").textContent=t.looks();
+    var n=p.querySelector("[data-note]");if(n){n.textContent=typeof t.note==="function"?t.note():t.note;if(typeof GLP!=="undefined")linkTerms(n)}
+  });
+  document.getElementById("sigcap").textContent=guide==="on"?"Right now: guidance on, scale 7.5. The batch doubles at line 1037 and the top case of the first row applies.":"Right now: guidance off, scale 1.0. The batch stays single and lines 1053 to 1059 do not run.";
+  drawViz();
+}
+
+/* ---------------- linking ---------------- */
+var pinned="loop",hover=null;
+function mathEls(cls){return document.querySelectorAll("mjx-container g."+cls)}
+function paint(){
+  var id=hover||pinned,t=T[id];
+  document.querySelectorAll(".tok").forEach(function(e){e.classList.toggle("on",e.dataset.id===id&&id!==pinned);e.classList.toggle("pin",e.dataset.id===pinned)});
+  document.querySelectorAll("mjx-container g.on").forEach(function(g){g.classList.remove("on")});
+  t.syms.forEach(function(c){mathEls(c).forEach(function(g){g.classList.add("on")})});
+  document.querySelectorAll(".mrow").forEach(function(r){r.classList.toggle("lit",t.rows.indexOf(r.dataset.row)>=0&&id!=="loop")});
+  var lit={};t.rows.forEach(function(k){if(id==="loop")return;for(var n=ROWS[k].lines[0];n<=ROWS[k].lines[1];n++)lit[n]=1});
+  document.querySelectorAll(".ln").forEach(function(l){l.classList.toggle("lit",!!lit[l.dataset.ln])});
+  document.querySelectorAll(".panel").forEach(function(p){p.classList.toggle("show",p.dataset.id===id)});
+}
+var narrow=matchMedia("(max-width:900px)");
+function openSheet(on){document.getElementById("inspzone").classList.toggle("open",on&&narrow.matches)}
+function pin(id,fromUser){pinned=id;hover=null;paint();if(fromUser!==false)openSheet(true)}
+document.getElementById("closer").addEventListener("click",function(e){e.stopPropagation();openSheet(false)});
+var code=document.getElementById("code");
+code.addEventListener("mouseover",function(e){var t=e.target.closest(".tok");if(t){hover=t.dataset.id;paint()}});
+code.addEventListener("mouseleave",function(){hover=null;paint()});
+code.addEventListener("click",function(e){var t=e.target.closest(".tok");if(t)pin(t.dataset.id)});
+code.addEventListener("keydown",function(e){var t=e.target.closest(".tok");if(t&&(e.key==="Enter"||e.key===" ")){e.preventDefault();pin(t.dataset.id)}});
+function symOf(el){var g=el.closest&&el.closest("g[class]");while(g){var cls=(g.getAttribute("class")||"").split(/\s+/).filter(function(c){return SYM2TOK[c]});if(cls.length)return SYM2TOK[cls[0]];g=g.parentElement&&g.parentElement.closest("g[class]")}return null}
+document.addEventListener("mouseover",function(e){if(!e.target.closest||!e.target.closest("mjx-container"))return;var id=symOf(e.target);if(id&&id!==hover){hover=id;paint()}});
+document.addEventListener("mouseout",function(e){if(e.target.closest&&e.target.closest("mjx-container")&&hover&&!(e.relatedTarget&&e.relatedTarget.closest&&e.relatedTarget.closest("mjx-container"))){hover=null;paint()}});
+document.addEventListener("click",function(e){
+  if(e.target.closest&&e.target.closest("mjx-container")){var id=symOf(e.target);if(id){pin(id);e.stopPropagation();return}}
+  var r=e.target.closest&&e.target.closest(".mrow");if(r){pin(ROWS[r.dataset.row].tok);return}
+  var c=e.target.closest&&e.target.closest("[data-go]");if(c){pin(c.dataset.go);document.getElementById("code").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"})}
+},true);
+document.getElementById("mrows").addEventListener("keydown",function(e){var r=e.target.closest(".mrow");if(r&&(e.key==="Enter"||e.key===" ")){e.preventDefault();pin(ROWS[r.dataset.row].tok)}});
+document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!fc.open){if(document.getElementById("inspzone").classList.contains("open"))openSheet(false);else pin("loop",false)}});
+document.querySelectorAll(".switch button").forEach(function(b){b.addEventListener("click",function(){
+  guide=b.dataset.g;document.querySelectorAll(".switch button").forEach(function(x){x.setAttribute("aria-pressed",x===b)});refreshDynamic();
+})});
+
+/* ---------------- algorithm ---------------- */
+var ALGO=[
+ [R`x_T\sim\pi(x_T)=\mathcal N(0,I)`,"prepare_latents, a separate page. Called by __call__ at line 999.","p. 2"],
+ [R`\textbf{for } t=T,\dots,1\ \textbf{do}`,"this page: the loop header, line 1032",""],
+ [R`\epsilon_\theta(x_t,t)`,"this page: the UNet forward, line 1042; guidance combines the two halves at lines 1053 to 1055",true,"Eq. 13 for guidance"],
+ [R`\mu_\theta(x_t,t)=\tfrac{1}{\sqrt{\alpha_t}}\Big(x_t-\tfrac{1-\alpha_t}{\sqrt{1-\bar\alpha_t}}\,\epsilon_\theta(x_t,t)\Big)`,"inside the scheduler step, line 1062, not shown on this page; derivation 3 opens it","Eq. 6"],
+ [R`x_{t-1}\sim\mathcal N\big(\mu_\theta(x_t,t),\,\Sigma_\theta\big)`,"this page: the scheduler step returns this as the new latents, line 1062","p. 2"],
+ [R`\textbf{return } x_0`,"after this loop ends: vae.decode at line 1085, after dividing by the VAE's scaling factor",""]
+];
+document.getElementById("algo").innerHTML=ALGO.map(function(a,i){
+  var here=(i===1||i===2||i===4);
+  var eqref=a.length===4?a[3]:a[2];
+  return '<div class="arow'+(here?" here":"")+'"><span class="k">'+(i+1)+'</span><div class="eq">\\('+a[0]+'\\)'+(eqref&&typeof eqref==="string"?'<span class="eqref">survey '+eqref+'</span>':'')+'</div><div class="map">'+a[1]+'</div></div>';
+}).join("");
+
+/* ---------------- derivations ---------------- */
+var DERS=[
+ {q:"List everything that changes between iteration i and i+1, and everything that does not.",
+  steps:[
+   [R`\textbf{changes: }\ t,\ \class{s-xt}{x_t}\ (\texttt{latents}),\ \hat\epsilon\ (\texttt{noise\_pred})`,"t advances to the next scheduled timestep; latents is reassigned at line 1062; noise_pred is recomputed at line 1042 from the new latents."],
+   [R`\textbf{does not change: }\ \texttt{prompt\_embeds},\ \class{s-s}{s}\ (\texttt{guidance\_scale}),\ \texttt{extra\_step\_kwargs}`,"All three are built once, before this loop, and only ever read inside it (lines 1045, 1055, 1062)."],
+   [R`\textbf{does not change: the scheduler object, the UNet's weights}`,"self.scheduler and self.unet are the same Python objects on every iteration; only what you pass them differs."],
+   [R`\Rightarrow\ \text{iteration } i \text{ is a pure function of } (t_i,\ x_{t_i})`,"Given the fixed prompt_embeds, guidance_scale and extra_step_kwargs, the only state carried forward is the pair (t, latents)."]
+  ],
+  answer:R`<p>Exactly two tensors survive from one iteration to the next: <code>t</code> and <code>latents</code>. Everything else the loop touches (<code>prompt_embeds</code>, <code>guidance_scale</code>, the scheduler, the UNet) is read fifty times and written zero.</p><p>That is why swapping the conditioning is a single-point intervention: it changes what line 1045 hands the UNet, and nothing about the loop's control flow has to move.</p>`,
+  chips:[["latents_var","latents"],["prompt_embeds_arg","prompt_embeds"],["t","t"]]},
+ {q:"Write the guidance formula and evaluate it at s = 0, s = 1 and s = 7.5. What does each give you, and what would you expect to go wrong at very large s?",
+  steps:[
+   [R`\epsilon_\theta(x_t,t)=\class{s-epsu}{\epsilon_u}+\class{s-s}{s}\,(\class{s-epsc}{\epsilon_c}-\epsilon_u)`,"Line 1055, with s = self.guidance_scale."],
+   [R`s=0:\quad \epsilon_\theta(x_t,t)=\epsilon_u`,"Purely unconditional: the prompt has no effect at all."],
+   [R`s=1:\quad \epsilon_\theta(x_t,t)=\epsilon_c`,"Exactly the conditional prediction. do_classifier_free_guidance is defined as s > 1, so s = 1 is the boundary where guidance adds nothing."],
+   [R`s=7.5:\quad \epsilon_\theta(x_t,t)=\epsilon_u+7.5(\epsilon_c-\epsilon_u)`,"SD 1.5's default. Lies far outside the segment between ε_u and ε_c: an extrapolation, not an interpolation."],
+   [R`s\to\infty:\ \|\epsilon_\theta(x_t,t)\|\to\infty`,"The extrapolation grows without bound, pushing noise_pred's variance well past what the UNet was trained to expect at that timestep."]
+  ],
+  answer:R`<p>\(s=0\) ignores the prompt; \(s=1\) is the plain conditional model with no guidance; \(s=7.5\) extrapolates about six and a half times past the conditional prediction, away from the unconditional one.</p><p>At very large \(s\), the result's magnitude overshoots what the UNet was trained on, producing over-saturated, high-contrast images. <code>guidance_rescale</code> (lines 1057 to 1059, off by default) exists to correct exactly this, by rescaling noise_pred's variance back toward noise_pred_text's.</p>`,
+  chips:[["guidance_scale","self.guidance_scale"],["guidance_rescale_block","rescale_noise_cfg"]]},
+ {q:"One level down: derive what self.scheduler.step actually computes, from the same forward-process equation used everywhere else on this page.",
+  steps:[
+   [R`q(x_{t-1}\mid x_t,x_0)=\mathcal N\big(x_{t-1};\ \tilde\mu_t(x_t,x_0),\ \tilde\beta_t I\big)`,"The true reverse posterior, knowable only if x_0 were known. Survey p. 2, around Eq. 5."],
+   [R`\tilde\mu_t(x_t,x_0)=\frac{\sqrt{\bar\alpha_{t-1}}\,\beta_t}{1-\bar\alpha_t}\,x_0+\frac{\sqrt{\alpha_t}\,(1-\bar\alpha_{t-1})}{1-\bar\alpha_t}\,x_t`,"Survey Eq. 5. Read from the PDF's text, its printed x_t coefficient is √ᾱ_(t-1), not the √α_t used here; see the notation table below."],
+   [R`x_0=\frac{x_t-\sqrt{1-\bar\alpha_t}\,\epsilon_t}{\sqrt{\bar\alpha_t}}`,"Invert the forward closed form, survey Eq. 3, for x_0."],
+   [R`\hat x_0=\frac{x_t-\sqrt{1-\bar\alpha_t}\,\epsilon_\theta(x_t,t)}{\sqrt{\bar\alpha_t}}`,"The network does not know the true noise ε_t, so substitute its guess ε_θ(x_t,t), i.e. noise_pred, in its place."],
+   [R`\mu_\theta(x_t,t)=\frac{1}{\sqrt{\alpha_t}}\Big(x_t-\frac{1-\alpha_t}{\sqrt{1-\bar\alpha_t}}\,\epsilon_\theta(x_t,t)\Big)`,"Substitute step 4 into step 2 and simplify (β_t = 1 − α_t). Survey Eq. 6; matches Algorithm 2, row 4."],
+   [R`x_{t-1}\sim\mathcal N\big(\mu_\theta(x_t,t),\,\Sigma_\theta\big)`,"Sample the reverse step with Σ_θ fixed to a constant (Ho et al. §3.2). This is what self.scheduler.step returns at line 1062, for the plain DDPM case."]
+  ],
+  answer:R`<p>\(\mu_\theta(x_t,t)\) is a rearrangement of the same forward-process equation (Eq. 3) used throughout this page's series, solved for \(x_0\) and substituted into the true posterior mean (Eq. 5).</p><p><code>self.scheduler.step</code> hides exactly this arithmetic behind one call. PNDM, DDIM and Euler differ only in how they get from \(\epsilon_\theta\) to \(x_{t-1}\) once they have it, not in what \(\epsilon_\theta\) means; that arithmetic is a separate page in the X-Ray's route.</p>`,
+  chips:[["scheduler_step","self.scheduler.step"],["latents_var","latents"]]}
+];
+document.getElementById("ders").innerHTML=DERS.map(function(d,i){
+  return '<details><summary><span class="num">'+(i+1)+'</span><span class="q">'+d.q+'</span><span class="open"></span></summary><div class="dbody"><ol class="steps">'+
+   d.steps.map(function(s){return '<li><div class="eq">\\['+s[0]+'\\]</div><div class="why">'+s[1]+'</div></li>'}).join("")+
+   '</ol><div class="answer"><h3>'+(i<2?"The answer in one line":"The answer in two lines")+'</h3>'+d.answer+'</div><div class="chips">'+
+   d.chips.map(function(c){return '<button class="chip" data-go="'+c[0]+'">Show '+esc(c[1])+' in the code</button>'}).join("")+'</div></div></details>';
+}).join("");
+
+/* ---------------- flowchart dialog ---------------- */
+var FN={
+ IN:{t:"Inputs and config",l:"your call, model files",d:"What you pass to pipe(...), and what SD 1.5's config files fix.",
+  takes:"nothing yet",gives:"prompt, guidance_scale = 7.5, eta = 0.0, guidance_rescale = 0.0, generator, callback_on_step_end = None"},
+ S0:{t:"Step 0: default size",l:"lines 912 to 924",d:"No size given, so height = width = sample_size 64 × vae_scale_factor 8 = 512.",
+  takes:"unet.config.sample_size, self.vae_scale_factor",gives:"height = 512, width = 512"},
+ S1:{t:"Step 1: check_inputs",l:"line 928, size check at line 638",d:"Stops early on bad arguments.",
+  takes:"prompt, height, width, and the rest",gives:"nothing, or an error"},
+ S2:{t:"Step 2: batch size and device",l:"lines 947 to 955",d:"A string prompt counts as a batch of 1.",
+  takes:"prompt",gives:"batch_size = 1, device = cuda:0"},
+ S3:{t:"Step 3: encode_prompt",l:"lines 957 to 987",d:"CLIP turns the prompt into prompt_embeds. Line 978 stacks [negative, positive] into one batch.",
+  takes:"prompt, negative_prompt, device",gives:"prompt_embeds, (2, 77, 768), float16. Fixed for the rest of the run."},
+ S4:{t:"Step 4: retrieve_timesteps",l:"lines 989 to 995",d:"Calls scheduler.set_timesteps(50): the timesteps this loop will visit.",
+  takes:"self.scheduler, num_inference_steps = 50",gives:"timesteps, 50 of them, from high to low"},
+ S5:{t:"Step 5: prepare_latents",l:"lines 997 to 1008, call at 999",d:"Draws x_T, a separate page.",
+  takes:"results of steps 0, 2, 3 and 4, plus your generator and latents",gives:"latents = x_T, (1, 4, 64, 64)"},
+ S6:{t:"Step 6: extra step kwargs",l:"lines 1010 to 1011",d:"Packs eta and the generator for the scheduler step. Empty {} for PNDM.",
+  takes:"generator, eta",gives:"extra_step_kwargs"},
+ S7:{t:"Step 7: denoising loop",l:"lines 1028 to 1082",d:"This page. for i, t in enumerate(timesteps): 50 iterations. Only latents and t change from one iteration to the next.",
+  takes:"latents = x_T, timesteps, prompt_embeds, extra_step_kwargs",gives:"latents = z_0 after the last iteration",me:true,
+  kids:["L1","L2","L3","L4","L5"],loop:true},
+ L1:{t:"Build the UNet input",l:"lines 1037 to 1039",d:"Doubles the batch for guidance (torch.cat), then scale_model_input (identity for PNDM).",takes:"latents, do_classifier_free_guidance, t",gives:"latent_model_input"},
+ L2:{t:"UNet forward",l:"lines 1042 to 1050",d:"Predicts the noise ε_θ(x_t,t), attending to prompt_embeds.",takes:"latent_model_input, t, prompt_embeds",gives:"noise_pred, (2, 4, 64, 64) or (1, 4, 64, 64)"},
+ L3:{t:"Guidance",l:"lines 1053 to 1059",d:"ε_u + s (ε_c − ε_u) with s = 7.5. guidance_rescale (off by default) can adjust it further.",takes:"noise_pred, guidance_scale",gives:"noise_pred, back to (1, 4, 64, 64)"},
+ L4:{t:"Scheduler step",l:"line 1062",d:"x_t → x_(t−1). Overwrites latents. This page treats it as one call; derivation 3 opens it.",takes:"noise_pred, t, latents, extra_step_kwargs",gives:"latents"},
+ L5:{t:"Callback and bookkeeping",l:"lines 1064 to 1082",d:"Optional callback_on_step_end (None by default); progress bar update.",takes:"latents, i, t",gives:"latents, unchanged unless a callback rewrites it"},
+ S8:{t:"After the denoising loop",l:"lines 1084 to 1099",d:"vae.decode(latents / scaling_factor) at line 1085 gives (1, 3, 512, 512); image_processor.postprocess at line 1099 gives a PIL image.",
+  takes:"latents = z_0",gives:"your image"}
+};
+var ORDER=["IN","S0","S1","S2","S3","S4","S5","S6","S7","S8"];
+var HOPS={
+ loop:[["S5","latents = self.prepare_latents(...)","x_T arrives, line 999"],["S6","extra_step_kwargs = self.prepare_extra_step_kwargs(...)","runs right before, line 1011"],["S7","for i, t in enumerate(timesteps)","this page starts"],["S8","vae.decode(latents / self.vae.config.scaling_factor)","reads what this page leaves behind"]],
+ t:[["S4","timesteps, num_inference_steps = retrieve_timesteps(...)","the 50 values this loop will walk through"],["S7","for i, t in enumerate(timesteps)","the loop variable, line 1032"],["L1","self.scheduler.scale_model_input(latent_model_input, t)","line 1039"],["L2","self.unet(latent_model_input, t, ...)","line 1044"],["L4","self.scheduler.step(noise_pred, t, latents, ...)","line 1062"]],
+ prompt_embeds_arg:[["S3","prompt_embeds, negative_prompt_embeds = self.encode_prompt(...)","built once, Stage A"],["S3","prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds])","line 978, if guidance is on"],["S7","for i, t in enumerate(timesteps)","read, never written, all 50 iterations"],["L2","self.unet(..., encoder_hidden_states=prompt_embeds, ...)","line 1045"]],
+ latents_var:[["S5","return latents","x_T, from prepare_latents"],["S7","for i, t in enumerate(timesteps)","this loop's first input"],["L1","torch.cat([latents] * 2) if ... else latents","line 1037"],["L4","latents = self.scheduler.step(...)","line 1062, x_t → x_(t−1), 50 times"],["S8","vae.decode(latents / self.vae.config.scaling_factor)","reads z_0, the final value"]],
+ latent_model_input:[["L1","torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents","line 1037"],["L1","self.scheduler.scale_model_input(latent_model_input, t)","line 1039"],["L2","self.unet(latent_model_input, t, ...)","line 1043, its only destination"]],
+ unet_forward:[["L2","noise_pred = self.unet(...)","line 1042"]],
+ noise_pred:[["L2","noise_pred = self.unet(...)[0]","raw, line 1042"],["L3","noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)","line 1054"],["L3","noise_pred = noise_pred_uncond + self.guidance_scale * (...)","combined, line 1055"],["L4","self.scheduler.step(noise_pred, t, latents, ...)","its only destination, line 1062"]],
+ noise_pred_uncond:[["L3","noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)","line 1054"],["L3","noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)","line 1055"]],
+ noise_pred_text:[["L3","noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)","line 1054"],["L3","... * (noise_pred_text - noise_pred_uncond)","line 1055"]],
+ guidance_scale:[["IN","pipe(prompt, guidance_scale=7.5)","your argument, or the default"],["S7","self._guidance_scale = guidance_scale","set once, before step 2"],["L3","noise_pred_uncond + self.guidance_scale * (...)","read every iteration, line 1055"]],
+ guidance_rescale_block:[["IN","pipe(prompt, guidance_rescale=0.0)","off by default"],["L3","if ... and self.guidance_rescale > 0.0","line 1057, false by default"]],
+ scheduler_step:[["S4","self.scheduler.set_timesteps(50)","the scheduler is configured first"],["L4","latents = self.scheduler.step(noise_pred, t, latents, ...)","line 1062"]],
+ extra_step_kwargs:[["S6","extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)","built once, line 1011"],["L4","self.scheduler.step(..., **extra_step_kwargs, ...)","unpacked every iteration, line 1062"]],
+ callback_hook:[["IN","pipe(prompt, callback_on_step_end=None)","off by default"],["L5","if callback_on_step_end is not None","line 1064, skipped by default"]],
+ interrupt:[["L1","if self.interrupt: continue","checked first, every iteration, line 1033"]],
+ cfg_flag:[["S7","self._guidance_scale = guidance_scale","depends on this, set at step 2"],["L1","torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents","line 1037"],["L3","if self.do_classifier_free_guidance:","line 1053"]],
+ cat_batch:[["L1","torch.cat([latents] * 2)","line 1037, only when guidance is on"]],
+ scale_model_input:[["L1","self.scheduler.scale_model_input(latent_model_input, t)","line 1039"]]
+};
+var fc=document.getElementById("fc"),fclist=document.getElementById("fclist"),flowOpenFor=null;
+function nodeHTML(k,cls){
+  var n=FN[k];
+  return '<button class="fnode'+(cls||"")+(n.me&&!n.kids?" me":"")+'" data-node="'+k+'" aria-expanded="false"><span class="ft"><b>'+esc(n.t)+'</b><span>'+esc(n.l)+'</span></span><span class="fd">'+esc(n.d)+'</span><span class="fmore"><b>Takes</b> '+esc(n.takes)+'<br><b>Gives</b> '+esc(n.gives)+'</span><span class="hops"></span></button>';
+}
+function buildChart(){
+  var h="";
+  ORDER.forEach(function(k,i){
+    var n=FN[k];
+    if(i)h+='<div class="fconn"></div>';
+    if(n.kids){
+      h+='<div class="fgroup'+(n.me?" me":"")+'">'+nodeHTML(k," head")+'<div class="kids">'+n.kids.map(function(c,j){return (j?'<div class="fconn"></div>':'')+nodeHTML(c)}).join("")+'</div>'+(n.loop?'<div class="loopback" aria-hidden="true"><span>× 50</span></div>':'')+'</div>';
+    } else h+=nodeHTML(k);
+  });
+  fclist.innerHTML=h;
+}
+buildChart();
+fclist.addEventListener("click",function(e){var b=e.target.closest(".fnode");if(!b)return;var on=!b.classList.contains("expanded");b.classList.toggle("expanded",on);b.setAttribute("aria-expanded",on)});
+function renderFlow(id){
+  flowOpenFor=id;
+  fclist.querySelectorAll(".fnode").forEach(function(b){b.classList.remove("lit","expanded");b.setAttribute("aria-expanded","false");b.querySelector(".hops").innerHTML=""});
+  if(!id){
+    fclist.classList.remove("tracing");
+    document.getElementById("fctitle").textContent="How __call__ runs";
+    document.getElementById("fchint").textContent="Top to bottom, the order pipe(prompt) runs in. Tap any box to see what it takes and what it gives.";
+    document.getElementById("fclegend").textContent="The tinted box is the denoising loop, opened up to show its own five steps, repeated 50 times.";
+    return;
+  }
+  var name=T[id].name.replace(/ \(.*\)$/,"");
+  fclist.classList.add("tracing");
+  document.getElementById("fctitle").textContent="Where "+name+" travels";
+  document.getElementById("fchint").textContent="The lit boxes are the steps it passes through. Numbers give the order.";
+  document.getElementById("fclegend").textContent="Faded boxes do not touch it. Tap any box to see what it takes and what it gives.";
+  (HOPS[id]||[]).forEach(function(hp,i){
+    var b=fclist.querySelector('[data-node="'+hp[0]+'"]');if(!b)return;
+    b.classList.add("lit");
+    b.querySelector(".hops").insertAdjacentHTML("beforeend",'<span class="hop"><i>'+(i+1)+'</i><code>'+esc(hp[1])+'</code><span>'+esc(hp[2])+'</span></span>');
+  });
+}
+function openFlow(id){
+  openSheet(false);renderFlow(id||null);
+  if(typeof fc.showModal==="function")fc.showModal();else fc.setAttribute("open","");
+  var first=id?fclist.querySelector(".fnode.lit"):null,body=fc.querySelector(".fc-body");
+  body.scrollTop=0;
+  if(first){requestAnimationFrame(function(){body.scrollTop=Math.max(0,first.getBoundingClientRect().top-body.getBoundingClientRect().top-12)})}
+}
+function closeFlow(){if(fc.open){if(typeof fc.close==="function")fc.close();else fc.removeAttribute("open")}flowOpenFor=null}
+document.getElementById("fcclose").addEventListener("click",closeFlow);
+fc.addEventListener("close",function(){flowOpenFor=null});
+fc.addEventListener("click",function(e){if(e.target===fc)closeFlow()});
+document.getElementById("openflow").addEventListener("click",function(){openFlow(null)});
+insp.addEventListener("click",function(e){var b=e.target.closest(".flowbtn");if(b)openFlow(b.dataset.flow)});
+
+/* ---------------- light follows the day ---------------- */
+var root=document.documentElement;
+function applyLight(){
+  var h=new Date().getHours(),tod=h>=5&&h<12?"morning":h>=12&&h<17?"afternoon":h>=17&&h<22?"evening":"night";
+  var forced=root.getAttribute("data-theme"),prefDark=matchMedia("(prefers-color-scheme: dark)").matches;
+  var dark=forced==="dark"||(forced!=="light"&&prefDark);
+  var scheme,ground,light;
+  if(forced==="light"||(!dark&&(tod==="morning"||tod==="afternoon"))){
+    scheme="day";
+    ground=tod==="morning"?"#F6EEE1":"#F4EEE4";
+    light=tod==="morning"?"radial-gradient(1100px 520px at 0% 0%,rgba(255,236,200,.55),transparent 70%)"
+         :tod==="afternoon"?"radial-gradient(1200px 420px at 50% -10%,rgba(255,244,214,.6),transparent 70%)"
+         :"radial-gradient(900px 480px at 50% 110%,rgba(242,154,46,.14),transparent 70%)";
+  } else {
+    scheme="night";
+    if(tod==="night"){ground="#1A1512";light="radial-gradient(900px 460px at 50% 115%,rgba(242,154,46,.12),transparent 70%)";}
+    else{ground="#33241F";light=tod==="evening"?"radial-gradient(800px 520px at 105% 20%,rgba(224,120,74,.16),transparent 70%)":"radial-gradient(900px 460px at 50% 115%,rgba(242,154,46,.10),transparent 70%)";}
+  }
+  root.setAttribute("data-scheme",scheme);
+  root.style.setProperty("--ground",ground);
+  root.style.setProperty("--light",light);
+  if(scheme==="night"&&ground==="#33241F"){root.style.setProperty("--card","#2A1E1A");root.style.setProperty("--code-bg","#2A1E1A")}
+  else{root.style.removeProperty("--card");root.style.removeProperty("--code-bg")}
+  drawViz();
+}
+new MutationObserver(function(ms){if(ms.some(function(m){return m.attributeName==="data-theme"}))applyLight()}).observe(root,{attributes:true});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",applyLight);
+setInterval(applyLight,5*60*1000);
+
+/* ---------------- glossary links ---------------- */
+var GLP=[[/classifier-free guidance/i,"cfg"],[/terminal SNR/,"snr"],[/\bSNR\b/,"snr"],[/\bDDPM(?:Scheduler)?\b/,"ddpm"],[/\bDDIM(?:Scheduler)?\b/,"ddim"],[/\bPNDM(?:Scheduler)?\b/,"pndm"],[/\bη\b|\beta\b(?!_)/,"eta"],[/guidance_rescale/,"rescale"],[/callback_on_step_end/,"callback"],[/\bVAE\b/,"vae"],[/\bCLIP\b/,"clip"],[/\bfp16\b/,"fp16"],[/denoising loop/i,"loop"],[/prepare_latents/,"preplat"],[/UNet forward/,"unetfwd"],[/scheduler step/i,"schedstep"],[/sampling algorithm/i,"sampalg"],[/forward process/i,"forward"],[/reverse process/i,"reverse"],[/\bprior\b/,"prior"],[/noise prediction/i,"epspred"]];
+function linkTerms(root){
+  var used={},walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:function(n){
+    var p=n.parentElement;if(!p||p.closest("code,a,button,.gl,.looks,mjx-container,dialog,script,style"))return NodeFilter.FILTER_REJECT;return NodeFilter.FILTER_ACCEPT}});
+  var nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+  nodes.forEach(function(tn){
+    var parts=tn.nodeValue.split(/(\\\(.*?\\\)|\\\[[\s\S]*?\\\])/),changed=false,frag=document.createDocumentFragment();
+    parts.forEach(function(seg,k){
+      if(k%2===1||!seg){frag.appendChild(document.createTextNode(seg));return}
+      var rest=seg;
+      while(rest){
+        var best=null;
+        GLP.forEach(function(g){if(used[g[1]])return;var m=g[0].exec(rest);if(m&&(!best||m.index<best.m.index))best={m:m,id:g[1]}});
+        if(!best){frag.appendChild(document.createTextNode(rest));break}
+        changed=true;used[best.id]=1;
+        frag.appendChild(document.createTextNode(rest.slice(0,best.m.index)));
+        var a=document.createElement("span");a.className="gl";a.setAttribute("role","button");a.tabIndex=0;a.dataset.gl=best.id;a.title="See this in Terms on this page";a.textContent=best.m[0];frag.appendChild(a);
+        rest=rest.slice(best.m.index+best.m[0].length);
+      }
+    });
+    if(changed)tn.parentNode.replaceChild(frag,tn);
+  });
+}
+document.querySelectorAll(".lede,.callbar p,.hint,.fine,.project p,.dbody .why,.answer,.panel .f p,.panel .note,.panel .kind,.arow .map,.prov p,.ntable td,.sigcap").forEach(function(el){if(!el.closest("section")||!el.closest("section").querySelector("dl.terms"))linkTerms(el)});
+function goGloss(a){
+  openSheet(false);
+  var dt=document.getElementById("gl-"+a.dataset.gl);if(!dt)return;
+  dt.scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"});
+  dt.classList.add("flash");setTimeout(function(){dt.classList.remove("flash")},1600);
+}
+document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest(".gl");if(a){e.preventDefault();e.stopPropagation();goGloss(a)}},true);
+document.addEventListener("keydown",function(e){var a=e.target.closest&&e.target.closest(".gl");if(a&&(e.key==="Enter"||e.key===" ")){e.preventDefault();goGloss(a)}});
+
+/* ---------------- go ---------------- */
+refreshDynamic();applyLight();paint();
+function typesetAll(){
+  if(window.MathJax&&MathJax.startup&&MathJax.startup.promise){
+    MathJax.startup.promise.then(function(){return MathJax.typesetPromise()}).then(paint).catch(function(e){console.error(e)});
+  } else setTimeout(typesetAll,100);
+}
+typesetAll();
+})();
+</script>
+</body>
+</html>
