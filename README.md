@@ -9,6 +9,7 @@ This is nascent by design. It grows as understanding grows, not all at once.
 - `concepts/` — one folder per diffusion concept (e.g. forward process, denoising, score matching, schedulers, classifier-free guidance). Each folder holds a `README.md` (definition + intuition) and code/notebooks where relevant.
 - `notebooks/` — exploratory or experimental notebooks that don't belong to a single finalized concept yet.
 - `design-system/` — reference copy of the personal design language used for any artifacts, diagrams, or visual explainers built from this repo. See `design-system/README.md`.
+- `references/` — source papers this repo is built from, plus `notation.md`, the fixed notation convention all math in this repo follows. See `references/README.md`.
 
 ## How this repo is used
 
