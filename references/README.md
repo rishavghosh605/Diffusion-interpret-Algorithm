@@ -8,15 +8,12 @@ Papers this repo's concepts and notation are built from.
 *Diffusion Models and Representation Learning: A Survey.* arXiv:2407.00783.
 https://arxiv.org/abs/2407.00783
 
-- Full text: [`omar-2024-diffusion-survey.md`](./omar-2024-diffusion-survey.md)
+- Original PDF: [`omar-2024-diffusion-survey.pdf`](./omar-2024-diffusion-survey.pdf)
+- Full text (Markdown extraction, kept alongside the PDF for quick reading/searching): [`omar-2024-diffusion-survey.md`](./omar-2024-diffusion-survey.md)
 - Notation cheat sheet, kept in sync with this paper: [`notation.md`](./notation.md)
 
-**Note on the file:** this environment's network policy blocks direct access to
-arxiv.org (and its mirrors), so the exact PDF couldn't be downloaded into the repo.
-The full paper text was retrieved instead and saved as Markdown, preserving every
-section, equation, and reference. If a literal PDF copy is needed later, fetch it
-from https://arxiv.org/pdf/2407.00783 from an unrestricted network and drop it in
-this folder as `omar-2024-diffusion-survey.pdf`.
+**Note:** this environment's network policy blocks direct access to arxiv.org, so
+the PDF couldn't be fetched automatically — it was supplied directly and added here.
 
 ## Notation convention
 
