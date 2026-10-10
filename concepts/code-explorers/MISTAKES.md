@@ -6,13 +6,13 @@ A running log of real mistakes caught while building this series, kept so the sa
 
 ### Citing an equation number with no way to see the equation
 
-**What happened:** `denoising_loop.html` cited "survey Eq. 13" seven times (glossary, notation table, four token math fields, the algorithm table) without ever showing what Eq. 13 actually says. A reader hits a bare citation with nothing to click.
+**What happened:** `denoising_loop.html` cited "survey Eq. 13" seven times (glossary, notation table, four token math fields, the algorithm table) without ever showing what Eq. 13 actually says. A reader hits a bare citation with nothing to click. Fixing that one citation and then grepping the rest of the page turned up five more bare citations, to Eq. 1, 3, 5, 6 and 7, in the same shape — same mistake, just not yet flagged.
 
-**Why:** Citations were written the way a paper cites its own equations — by number, trusting the reader has the paper open. This page's reader doesn't.
+**Why:** Citations were written the way a paper cites its own equations — by number, trusting the reader has the paper open. This page's reader doesn't. One instance looked like a one-off until the grep showed it was the default way every equation got cited.
 
-**Fix:** Quote the actual equation (verified against the saved paper text, not recalled) inside the glossary entry for the thing the equation defines, then add one `GLP` auto-link pattern (`/Eq\. 13/`) so every bare citation becomes clickable to it. Reuses existing infrastructure, no new UI.
+**Fix:** For each equation number, quote the actual equation (verified against the saved paper text, not recalled) inside the glossary entry for the thing it defines, then add a `GLP` auto-link pattern so every bare citation becomes clickable to it. Two citations sat outside any auto-linked selector (an eqref span in the algorithm table, a `where` field in the math-row sidebar) and needed a manual `.gl` span instead. One equation (survey Eq. 9, VP/VE) couldn't be pinned to an exact number — the extracted PDF text garbles that part of the numbering — so it got a softened, honest citation instead of a fabricated precise one.
 
-**Now automatic?** No. Nothing currently greps for "Eq. N" and checks it resolves to something quotable. Worth a QA script eventually: every `Eq. \d+` on the page should be inside a `.gl` span or adjacent to one.
+**Now automatic?** Partly — promoted to `VERIFICATION.md` item 4 as a grep (every `Eq. N` resolves to a `.gl` span). Still relies on someone adding the glossary quote and pattern when a new equation gets cited in the first place; the grep only catches it after the fact.
 
 ---
 
