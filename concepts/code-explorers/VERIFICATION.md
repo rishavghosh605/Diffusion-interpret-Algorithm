@@ -12,12 +12,13 @@ Plus one reading pass, below — not yet scripted.
 4. **Grep-level house rules.** No em dash (`—`), no `<a href>` outside the header's two links, every `GLP` pattern has a matching `gl-` entry, every `Eq. N` citation sits inside or next to a `.gl` span. Each is one regex; see `MISTAKES.md` for what happens when the last one is skipped.
 
 5. **Every term is defined on *this* page.** Read every token's `math`/`note`/`flow` text once, start to finish. Any acronym, equation number, or shape (like "77 × 768") needs a `gl-` entry *on this page* — not just on another page in the series — or a full inline explanation. Each page is supposed to be self-contained; see `MISTAKES.md` for what happens when a term leans on another page's glossary.
+6. **Every intervention point is named.** Scan the pinned source for any hook, callback, or optional argument that lets code outside this loop rewrite state mid-run — `callback_on_step_end` rewriting `latents`/`prompt_embeds` is the example already on `denoising_loop.html`. Each one gets a plain Code terms entry: what it is, when it's `None`/off by default, what it can rewrite. No more detail than that — these are exactly the points this repo's project (infusing different prompts or latent representations) will eventually hook into, so they need to be found and named, not elaborated on here.
 
-If these five pass, the page's content is correct, internally consistent, and self-contained. That's the part that's expensive to get wrong and cheap to check.
+If these six pass, the page's content is correct, internally consistent, self-contained, and hasn't buried the one kind of line this repo's project actually needs to find later.
 
 ## Do this once, briefly (a minute or two, browser, no interaction loop)
 
-6. **Two or three screenshots, not a click sweep.** Open the page with a local MathJax copy if the CDN is blocked in-sandbox (`npm install mathjax@3.2.2`, swap the `<script src>`), force `data-theme="light"` so the screenshot doesn't depend on server time, and take:
+7. **Two or three screenshots, not a click sweep.** Open the page with a local MathJax copy if the CDN is blocked in-sandbox (`npm install mathjax@3.2.2`, swap the `<script src>`), force `data-theme="light"` so the screenshot doesn't depend on server time, and take:
    - the page as loaded (checks MathJax typeset, layout, code coloring all at once)
    - one token clicked, to confirm the inspector panel updates
    - the flowchart opened and one box expanded
@@ -26,7 +27,7 @@ If these five pass, the page's content is correct, internally consistent, and se
 
 ## Skip, unless something specific is in doubt
 
-- Clicking every token, every math symbol, every flowchart box, at every viewport, in both color schemes. If checks 1 to 5 pass and the screenshots look right, this doesn't turn up anything new — it just spends a lot of wall-clock time re-verifying the same rendering path over and over with different data.
+- Clicking every token, every math symbol, every flowchart box, at every viewport, in both color schemes. If checks 1 to 6 pass and the screenshots look right, this doesn't turn up anything new — it just spends a lot of wall-clock time re-verifying the same rendering path over and over with different data.
 - A full mobile-width interaction pass. Worth doing only if the page has mobile-specific layout logic being changed (the bottom-sheet inspector, the loopback arrow hiding) — not by default.
 - Assuming a network failure during QA is a page bug without checking whether the sandbox itself can reach that host — see `MISTAKES.md`.
 

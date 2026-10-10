@@ -48,7 +48,7 @@ A running log of real mistakes caught while building this series, kept so the sa
 
 **Fix:** When QA fails on a network call, check whether the *sandbox* can reach that host at all before assuming the page is wrong (`curl -sS "$HTTPS_PROXY/__agentproxy/status"`, or just try the same host for something unrelated). If it's a sandbox policy block, swap in a local copy for the sandbox test only (`npm install mathjax@3.2.2`, point the test's `<script src>` at it) and leave the real CDN link in the shipped page — the sandbox's restrictions aren't the reader's.
 
-**Now automatic?** Partly — `VERIFICATION.md` item 6 already says to use a local MathJax copy by default, which sidesteps the question. Still relies on recognizing a *new* blocked host for what it is, by eye, the first time.
+**Now automatic?** Partly — `VERIFICATION.md` item 7 already says to use a local MathJax copy by default, which sidesteps the question. Still relies on recognizing a *new* blocked host for what it is, by eye, the first time.
 
 ---
 
