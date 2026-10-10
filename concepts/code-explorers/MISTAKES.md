@@ -24,10 +24,28 @@ A running log of real mistakes caught while building this series, kept so the sa
 
 **Fix:** Added `gl-vpve` to `denoising_loop.html`'s own glossary (not just a reference to the other page), and expanded the existing `gl-clip` entry to explain 77 and 768 individually instead of just stating the shape.
 
-**Now automatic?** No, and hard to make fully automatic — it requires judgment about which terms are "used precisely enough to need their own entry" vs. "fine as prose." The cheap partial check: before shipping a page, read every token's `math` and `note` field once, and for every capitalized acronym or named quantity in them, confirm a `gl-` entry for it exists **on that same page**. This is the same move as the glossary-coverage check in `VERIFICATION.md` item 4 (every `GLP` pattern has an entry) — just aimed one level up, at terms that aren't in `GLP` yet because nobody added them.
+**Now automatic?** Partly — promoted to `VERIFICATION.md` item 5 as a required reading pass. Still judgment, not a script: it requires deciding which terms are "used precisely enough to need their own entry" vs. "fine as prose."
 
 ---
 
-## Standing check to add next time
+### Re-explaining a term inline instead of linking to the glossary
 
-Before calling a page done, in addition to `VERIFICATION.md`'s four scripted checks: read the full set of token `math`/`note`/`flow` text once, start to finish, as a reader who hasn't seen the other pages. Any named thing you'd have to ask about (an acronym, an equation number, a shape like "77 × 768") needs either a `gl-` entry on *this* page or to be fully explained inline. This is a reading pass, not yet a script — if it keeps catching things, it's worth scripting (flag every capitalized multi-letter token and every "Eq. N" and check each resolves to a `gl-` id).
+**What happened:** Early token `math`/`note` fields, when they touched a term worth real explanation (a named method, a contrast with another method, historical context), wrote the explanation out inline, in the inspector box itself. The boxes started carrying paragraph-length asides that crowded out the thing the box actually exists for (what this name looks like, where it comes from and goes to).
+
+**Why:** Writing the explanation right where the question comes up feels more helpful in the moment than it is on the page as a whole — it works once, then makes every other box noisier for readers who already know the term.
+
+**Fix:** Name the term inline, in plain text, exactly as it appears in the glossary's `<dt>`. Put the actual explanation, including any nuance, in the glossary entry. The page's existing `GLP`/`.gl` auto-link mechanism turns the matching phrase into a click-through automatically, as long as it's inside a linked selector (`.panel .f p`, `.panel .note`, `.panel .kind`, etc. — already wired up in every page's script). No manual link markup needed. This is also just `code_explorer_plan.md`'s own rule ("the glossary on the page is the explanation," external links are out) applied one level down, to the page's own inline boxes and not just to outside sources.
+
+**Now automatic?** No. It's a writing-time judgment call (does this box need its own paragraph, or does the term already have — or deserve — a glossary entry). Reviewed by eye.
+
+---
+
+### Treating the sandbox's blocked network as a page bug
+
+**What happened:** QA against jsdelivr (MathJax's CDN) failed inside this environment's sandbox (its network policy blocks the domain), and the failure briefly looked like it might be the page's fault before the cause was confirmed.
+
+**Why:** A blocked-CDN console error and a real MathJax bug look identical from the page's own console output; the difference is environmental, not visible on the page.
+
+**Fix:** When QA fails on a network call, check whether the *sandbox* can reach that host at all before assuming the page is wrong (`curl -sS "$HTTPS_PROXY/__agentproxy/status"`, or just try the same host for something unrelated). If it's a sandbox policy block, swap in a local copy for the sandbox test only (`npm install mathjax@3.2.2`, point the test's `<script src>` at it) and leave the real CDN link in the shipped page — the sandbox's restrictions aren't the reader's.
+
+**Now automatic?** Partly — `VERIFICATION.md` item 6 already says to use a local MathJax copy by default, which sidesteps the question. Still relies on recognizing a *new* blocked host for what it is, by eye, the first time.
