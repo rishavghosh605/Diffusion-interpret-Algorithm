@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>What makes attention "cross"</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;1,7..72,400&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+window.MathJax={
+  tex:{packages:{"[+]":["html"]},inlineMath:[["\\(","\\)"]],displayMath:[["\\[","\\]"]]},
+  svg:{fontCache:"global"},
+  options:{enableMenu:false},
+  startup:{typeset:false}
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg-full.js"></script>
+<style>
+:root{
+  --paper:#F4EEE4; --ground:#F4EEE4; --card:#FFFBF5; --zone:rgba(255,251,245,.6);
+  --ink:#2B221C; --ink-soft:#4A3D32; --muted:#6A5A4C; --on-ink:#F6EFE3;
+  --line:rgba(43,34,28,.11); --line-strong:rgba(43,34,28,.22);
+  --flame:#C98A1E; --flame-soft:rgba(201,138,30,.16); --flame-ink:#6B4A08;
+  --code-bg:#FFFBF5; --glow:rgba(255,236,200,.55); --dusk:rgba(224,120,74,0);
+  --shadow-lift:0 14px 30px #3424142e,0 2px 6px #34241414;
+  --serif:"Literata","Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --sans:"Figtree",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#1A1512; --ground:#1A1512; --card:#241D19; --zone:rgba(239,229,214,.035);
+    --ink:#EFE5D6; --ink-soft:#D8CAB7; --muted:#AE9E8B; --on-ink:#1A1512;
+    --line:rgba(239,229,214,.09); --line-strong:rgba(239,229,214,.22);
+    --flame:#E9A23B; --flame-soft:rgba(233,162,59,.18); --flame-ink:#F0C77A;
+    --code-bg:#241D19; --shadow-lift:0 14px 30px #00000073;
+  }
+}
+:root[data-theme="dark"],:root[data-scheme="night"]{
+  --paper:#1A1512; --card:#241D19; --zone:rgba(239,229,214,.035);
+  --ink:#EFE5D6; --ink-soft:#D8CAB7; --muted:#AE9E8B; --on-ink:#1A1512;
+  --line:rgba(239,229,214,.09); --line-strong:rgba(239,229,214,.22);
+  --flame:#E9A23B; --flame-soft:rgba(233,162,59,.18); --flame-ink:#F0C77A;
+  --code-bg:#241D19; --shadow-lift:0 14px 30px #00000073;
+}
+:root[data-scheme="day"]{
+  --paper:#F4EEE4; --card:#FFFBF5; --zone:rgba(255,251,245,.6);
+  --ink:#2B221C; --ink-soft:#4A3D32; --muted:#6A5A4C; --on-ink:#F6EFE3;
+  --line:rgba(43,34,28,.11); --line-strong:rgba(43,34,28,.22);
+  --flame:#C98A1E; --flame-soft:rgba(201,138,30,.16); --flame-ink:#6B4A08;
+  --code-bg:#FFFBF5; --shadow-lift:0 14px 30px #3424142e,0 2px 6px #34241414;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px);background:var(--ground)}
+body{margin:0;color:var(--ink);background:var(--ground);font:15px/1.6 var(--serif);min-height:100vh;position:relative}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;background:var(--light,none);z-index:0}
+.wrap{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:40px 24px 64px}
+a{color:inherit;text-decoration-color:var(--line-strong);text-underline-offset:3px}
+a:hover{text-decoration-color:var(--flame)}
+:focus-visible{outline:2px solid var(--flame);outline-offset:2px;border-radius:4px}
+.sans{font-family:var(--sans)}
+code,.mono{font-family:var(--mono);font-size:.9em}
+
+/* header */
+h1{font:500 42px/1.1 var(--serif);letter-spacing:-.012em;margin:0 0 10px}
+.lede{font-size:17px;line-height:1.6;color:var(--ink-soft);max-width:62ch;margin:0 0 10px}
+.meta{font:500 12.5px/1.5 var(--sans);color:var(--muted);margin:0}
+h2{font:600 14.5px/20px var(--sans);margin:0 0 4px;color:var(--ink)}
+.hint{font:400 13.5px/20px var(--sans);color:var(--muted);margin:0 0 14px;max-width:70ch}
+
+/* stitch divider */
+.stitch{display:block;width:100%;height:10px;margin:44px 0 30px;color:var(--line-strong)}
+
+/* guidance switch */
+.bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;margin:28px 0 14px}
+.switch{display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:var(--zone);border:1px solid var(--line)}
+.switch button{font:500 14px/20px var(--sans);border:0;background:transparent;color:var(--muted);padding:5px 14px;border-radius:999px;cursor:pointer;transition:background .18s,color .18s}
+.switch button[aria-pressed="true"]{background:var(--ink);color:var(--on-ink)}
+.switch-label{font:500 12px/16px var(--sans);color:var(--muted);margin-right:8px}
+
+/* main grid */
+.grid{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(0,1fr);gap:16px;align-items:start}
+.side{display:grid;gap:16px;position:sticky;top:calc(16px + env(safe-area-inset-top,0px))}
+@media (max-width:900px){.grid{grid-template-columns:1fr}.side{position:static}}
+.zone{background:var(--zone);border-radius:16px;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px}
+.zone-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:0 0 10px}
+.zone-h span{font:500 12px/16px var(--sans);color:var(--muted)}
+
+/* code */
+.code{padding:10px 0;font:12.5px/1.75 var(--mono);color:var(--ink);background:var(--code-bg)}
+.ln{display:grid;grid-template-columns:44px minmax(0,1fr);padding-right:12px;transition:background .18s}
+.ln .n{color:var(--muted);text-align:right;padding-right:14px;user-select:none;opacity:.8}
+.ln .t{white-space:pre-wrap;word-break:break-word}
+.ln.lit{background:var(--flame-soft)}
+.kw{color:var(--muted);font-weight:600}
+.str,.com{color:var(--muted)}
+.com{font-style:italic}
+.tok{cursor:pointer;border-radius:4px;padding:0 1px;background-image:linear-gradient(currentColor,currentColor);background-size:100% 1px;background-repeat:no-repeat;background-position:0 100%;transition:background-color .15s,color .15s}
+.tok.eng{background-image:linear-gradient(var(--line-strong),var(--line-strong))}
+.tok.on{background-color:var(--flame-soft);color:var(--flame-ink);background-image:none}
+.tok.pin{background-color:var(--flame-soft);color:var(--flame-ink);background-image:none;box-shadow:inset 0 -2px 0 var(--flame)}
+
+/* math rows */
+.mrows{padding:6px 14px}
+.mrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:8px 6px;border-radius:8px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .18s}
+.mrow:last-child{border-bottom:0}
+.mrow.lit{background:var(--flame-soft)}
+.mrow .where{font:500 12px/16px var(--sans);color:var(--muted);white-space:nowrap}
+.mrow .eq{overflow-x:auto;overflow-y:hidden}
+.sigcap{font:400 13.5px/20px var(--sans);color:var(--muted);padding:2px 20px 12px}
+mjx-container{color:var(--ink)}
+mjx-container[display="true"]{margin:.3em 0 !important;text-align:left !important}
+mjx-container [class^="s-"],mjx-container [class*=" s-"]{cursor:pointer}
+mjx-container g.on{fill:var(--flame-ink)}
+mjx-container g.on use,mjx-container g.on path,mjx-container g.on rect{fill:var(--flame-ink);stroke:var(--flame);stroke-width:26px}
+
+/* inspector */
+.insp{padding:16px 18px 18px}
+.insp .panel{display:none}
+.insp .panel.show{display:block}
+.ih{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;margin-bottom:2px}
+.ih .cn{font:600 15px/1.4 var(--mono);color:var(--ink);word-break:break-word}
+.ih .arrow{font:500 13px var(--sans);color:var(--muted)}
+.kind{font:500 12px/16px var(--sans);color:var(--muted);margin:0 0 12px}
+.f{margin-top:12px}
+.f h3{font:600 13px/18px var(--sans);color:var(--muted);margin:0 0 3px}
+.f p{margin:0;font-size:15px;line-height:1.55}
+.looks{font:12.5px/1.6 var(--mono);background:var(--zone);border:1px solid var(--line);border-radius:8px;padding:8px 10px;white-space:pre-wrap}
+.viz{display:flex;gap:12px;align-items:center;margin-top:8px}
+.viz canvas{width:88px;height:88px;image-rendering:pixelated;border-radius:6px;border:1px solid var(--line);flex:none}
+.viz span{font:400 13px/18px var(--sans);color:var(--muted)}
+.note{margin-top:12px;padding:8px 12px;border-radius:8px;background:var(--flame-soft);color:var(--flame-ink);font:400 13.5px/20px var(--sans)}
+.none{font-style:italic;color:var(--muted)}
+
+/* algorithm */
+.algo{padding:6px 0}
+.arow{display:grid;grid-template-columns:28px minmax(0,1.2fr) minmax(0,1fr);gap:4px 14px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line)}
+.arow:last-child{border-bottom:0}
+.arow .k{font:500 12px var(--sans);color:var(--muted)}
+.arow .eq{overflow-x:auto;overflow-y:hidden}
+.arow .map{font:400 13.5px/20px var(--sans);color:var(--ink-soft)}
+.arow.here{background:var(--flame-soft)}
+.arow.here .map{color:var(--flame-ink);font-weight:500}
+@media (max-width:640px){.arow{grid-template-columns:24px minmax(0,1fr)}.arow .map{grid-column:2}}
+.fine{font:400 13.5px/20px var(--sans);color:var(--muted);margin:12px 0 0;max-width:72ch}
+
+/* derivations */
+details{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:10px}
+summary{list-style:none;cursor:pointer;padding:14px 18px;display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:baseline}
+summary::-webkit-details-marker{display:none}
+summary .num{font:500 20px/1 var(--serif);color:var(--flame-ink)}
+summary .q{font:500 17px/1.45 var(--serif)}
+summary .open{font:500 12px/16px var(--sans);color:var(--muted);white-space:nowrap}
+details[open] summary .open::after{content:"Close"}
+details:not([open]) summary .open::after{content:"Try it on paper, then open"}
+.dbody{padding:0 18px 18px 56px}
+@media (max-width:640px){.dbody{padding:0 14px 16px}summary{grid-template-columns:24px minmax(0,1fr)}summary .open{grid-column:2}}
+ol.steps{list-style:none;counter-reset:s;padding:0;margin:0}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:26px minmax(0,1fr);gap:0 8px;padding:7px 0;border-bottom:1px dashed var(--line)}
+ol.steps li::before{content:counter(s);font:500 12.5px/2 var(--sans);color:var(--muted)}
+ol.steps .eq{overflow-x:auto;overflow-y:hidden}
+ol.steps .why{grid-column:2;font:400 13.5px/19px var(--sans);color:var(--muted)}
+.answer{margin-top:14px;padding:12px 14px;border-radius:10px;background:var(--zone);border:1px solid var(--line)}
+.answer h3{font:600 13px/18px var(--sans);color:var(--muted);margin:0 0 4px}
+.answer p{margin:0 0 4px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.chip{font:500 12px/16px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:5px 11px;border-radius:999px;cursor:pointer}
+.chip:hover{border-color:var(--flame)}
+
+/* project + whole */
+.project p{max-width:66ch;margin:0 0 10px;font-size:16px}
+.whole{overflow-x:auto;padding:8px 4px}
+.prov{font:400 12.5px/19px var(--sans);color:var(--muted);max-width:80ch}
+.prov p{margin:0 0 6px}
+.closer{display:none}
+@media (max-width:900px){
+  .inspzone{position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));max-height:52vh;overflow:auto;z-index:5;background:var(--card);box-shadow:var(--shadow-lift);border-radius:22px;padding:8px;transform:translateY(115%);transition:transform .25s ease;visibility:hidden}
+  .inspzone.open{transform:none;visibility:visible}
+  .inspzone .card{border:0}
+  .closer{display:block;margin:4px 8px 0 auto;font:500 13px/18px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:4px 12px;border-radius:999px;cursor:pointer}
+  .wrap{padding-bottom:120px}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none !important}}
+/* caller bar */
+.callbar{margin-top:26px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;padding:12px 16px;border-radius:16px;background:var(--zone)}
+.callbar p{margin:0;font-size:15.5px;max-width:64ch}
+.openflow{font:500 14px/20px var(--sans);border:0;background:var(--ink);color:var(--on-ink);padding:7px 16px;border-radius:999px;cursor:pointer}
+.flowbtn{margin-top:8px;font:500 13px/18px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:5px 12px;border-radius:999px;cursor:pointer}
+.flowbtn:hover{border-color:var(--flame)}
+
+/* flowchart dialog */
+dialog.fc{border:0;padding:0;border-radius:22px;background:var(--card);color:var(--ink);box-shadow:var(--shadow-lift);width:min(760px,calc(100vw - 24px));max-height:calc(100vh - 32px);overflow:hidden}
+dialog.fc::backdrop{background:rgba(26,21,18,.42)}
+dialog.fc[open]{animation:fcin .2s ease}
+@keyframes fcin{from{opacity:0;transform:translateY(8px) scale(.99)}to{opacity:1;transform:none}}
+.fc-top{position:sticky;top:0;z-index:3;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:18px 20px 12px;background:var(--card);border-bottom:1px solid var(--line)}
+.fc-top h2{font:500 21px/1.3 var(--serif);margin:0}
+.fc-top p{margin:4px 0 0;font:400 13.5px/20px var(--sans);color:var(--muted)}
+.fc-top button{flex:none;font:500 13px/18px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:5px 12px;border-radius:999px;cursor:pointer}
+.fc-body{overflow:auto;max-height:calc(100vh - 150px);padding:18px 20px 26px}
+.fc-list{position:relative;display:flex;flex-direction:column;align-items:stretch;max-width:560px;margin:0 auto}
+.fnode{position:relative;background:var(--card);border:1px solid var(--line-strong);border-radius:10px;padding:9px 12px;cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%;transition:opacity .2s,border-color .2s,background .2s}
+.fnode:hover{border-color:var(--flame)}
+.fnode .ft{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.fnode .ft b{font:600 14px/19px var(--sans)}
+.fnode .ft span{font:500 11.5px/15px var(--sans);color:var(--muted);white-space:nowrap}
+.fnode .fd{display:block;font:400 14px/1.5 var(--serif);color:var(--ink-soft);margin-top:3px}
+.fnode .fmore{display:none;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);font:400 13px/19px var(--sans);color:var(--ink-soft)}
+.fnode.expanded .fmore{display:block}
+.fnode .fmore b{font-weight:600;color:var(--ink)}
+.fnode .hops{display:none;margin-top:8px}
+.fnode .hop{display:grid;grid-template-columns:22px minmax(0,1fr);gap:2px 8px;align-items:start;padding:5px 0;border-top:1px dashed var(--line)}
+.fnode .hop i{font:600 11.5px/20px var(--sans);font-style:normal;text-align:center;border-radius:999px;background:var(--flame-soft);color:var(--flame-ink);width:20px;height:20px}
+.fnode .hop code{display:block;font:12px/1.5 var(--mono);color:var(--ink);word-break:break-word}
+.fnode .hop span{grid-column:2;font:400 12.5px/17px var(--sans);color:var(--ink-soft)}
+.fc-list.tracing .fnode{opacity:.42}
+.fc-list.tracing .fnode.lit{opacity:1;border-color:var(--flame);background:var(--card)}
+.fc-list.tracing .fnode.lit .hops{display:block}
+.fnode.me{background:var(--flame-soft);border-color:transparent}
+.fc-list.tracing .fnode.me:not(.lit){background:var(--flame-soft)}
+.fconn{align-self:center;width:1.5px;height:20px;background:var(--line-strong);position:relative;flex:none}
+.fconn::after{content:"";position:absolute;left:50%;bottom:-1px;width:7px;height:7px;border-right:1.5px solid var(--line-strong);border-bottom:1.5px solid var(--line-strong);transform:translateX(-50%) rotate(45deg)}
+.fgroup{position:relative;border:1.5px solid var(--line-strong);border-radius:16px;padding:10px 10px 12px;background:var(--zone);display:flex;flex-direction:column}
+.fgroup.me{border-color:var(--flame);background:var(--flame-soft)}
+.fgroup > .fnode.head{margin-bottom:10px}
+.fgroup .kids{display:flex;flex-direction:column;margin:0 0 0 18px}
+.fgroup .kids .fnode{padding:7px 10px}
+.fgroup .kids .fconn{height:14px}
+.loopback{position:absolute;right:-17px;top:62px;bottom:28px;width:14px;border:1.5px dashed var(--muted);border-left:0;border-radius:0 12px 12px 0;opacity:.8}
+.loopback span{position:absolute;right:-6px;top:50%;transform:translate(100%,-50%);font:600 11.5px/15px var(--sans);color:var(--muted);white-space:nowrap}
+.fc-legend{font:400 13px/19px var(--sans);color:var(--muted);max-width:560px;margin:0 auto 14px}
+@media (max-width:640px){.fgroup .kids{margin-left:8px}.loopback{display:none}.fc-body{padding:14px 12px 22px}}
+@media (prefers-reduced-motion: reduce){dialog.fc[open]{animation:none}}
+
+/* glossary + notation */
+.glh{font:600 14.5px/20px var(--sans);margin:22px 0 2px}
+.glsub{font:400 13.5px/20px var(--sans);color:var(--muted);margin:0 0 8px;max-width:70ch}
+dl.terms dt.flash,dl.terms dt.flash + dd{background:var(--flame-soft)}
+dl.terms dt,dl.terms dd{transition:background .4s}
+.gl{color:inherit;text-decoration:underline dotted var(--muted);text-underline-offset:3px;cursor:pointer}
+.gl:hover{text-decoration-color:var(--flame)}
+.ln-ref{font-family:var(--mono);font-size:.93em;color:inherit;text-decoration:underline dotted var(--muted);text-underline-offset:3px;cursor:pointer}
+.ln-ref:hover{text-decoration-color:var(--flame)}
+.ln.flash{background:var(--flame-soft)}
+dl.terms{display:grid;grid-template-columns:minmax(150px,220px) minmax(0,1fr);gap:0;margin:10px 0 0;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+dl.terms dt,dl.terms dd{margin:0;padding:10px 14px;border-bottom:1px solid var(--line)}
+dl.terms dt{font:600 13.5px/19px var(--sans)}
+dl.terms dd{font-size:15px}
+dl.terms dt:last-of-type,dl.terms dd:last-of-type{border-bottom:0}
+@media (max-width:640px){dl.terms{grid-template-columns:1fr}dl.terms dt{border-bottom:0;padding-bottom:0}}
+.ntable{overflow-x:auto}
+.ntable table{border-collapse:collapse;width:100%;min-width:620px;font-size:14.5px}
+.ntable th,.ntable td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--line)}
+.ntable th{font:600 12.5px/17px var(--sans);color:var(--muted)}
+.ntable tr:last-child td{border-bottom:0}
+.ntable td:first-child{font:500 13.5px/19px var(--sans)}
+.eqref{font:500 11.5px/15px var(--sans);color:var(--muted);display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>What makes attention "cross"</h1>
+  <p class="lede">One function computes both self-attention and cross-attention. The only difference is which tensor supplies the keys and values: the image's own features, or the prompt's. This page is that function.</p>
+  <p class="meta">Stage D of your <a href="https://claude.ai/artifact/MnpGyn4QjAEuY82bKTgBTF" target="_blank" rel="noopener">SD 1.5 X-Ray</a>, the deepest stage: inside a UNet block, inside a transformer block. diffusers v0.40.0, <a href="https://github.com/huggingface/diffusers/blob/v0.40.0/src/diffusers/models/attention_processor.py#L1141-L1162" target="_blank" rel="noopener">attention_processor.py lines 1141 to 1162</a>, <code>AttnProcessor.__call__</code>'s core. Notation follows the survey by Fuest et al. (2024) for the conditioning concept, plus Vaswani et al. (2017) for the attention formula itself, which the survey doesn't restate.</p>
+</header>
+
+<div class="callbar">
+  <p>Called from <code>BasicTransformerBlock.forward</code>'s <code>self.attn2(...)</code>, line 1043 of <code>attention.py</code> (a separate page, not yet built). That block calls this twice per layer: once as <code>self.attn1</code> (self-attention, no <code>encoder_hidden_states</code> passed), once as <code>self.attn2</code> (cross-attention, prompt embeddings passed). This page is the one function both calls run through.</p>
+  <button class="openflow" id="openflow">Open the flowchart</button>
+</div>
+
+<div class="bar">
+  <p class="hint" style="margin:0">Hover or tap a name in the code, or a symbol in the math. Its partner lights up on the other side.</p>
+  <div><span class="switch-label">Attention type</span><span class="switch" role="group" aria-label="Attention type">
+    <button data-p="cross" aria-pressed="true">Cross (prompt)</button>
+    <button data-p="self" aria-pressed="false">Self (image)</button>
+  </span></div>
+</div>
+
+<div class="grid">
+  <div class="zone">
+    <div class="zone-h"><h2>The code</h2><span>as it is at v0.40.0</span></div>
+    <div class="card code" id="code"></div>
+  </div>
+  <div class="side">
+    <div class="zone">
+      <div class="zone-h"><h2>The same lines, in math</h2><span>tap a row to see its lines</span></div>
+      <div class="card">
+        <div class="mrows" id="mrows"></div>
+        <div class="sigcap" id="sigcap"></div>
+      </div>
+    </div>
+    <div class="zone inspzone" id="inspzone">
+      <button class="closer" id="closer" aria-label="Close details">Close</button>
+      <div class="card insp" id="insp" aria-live="polite"></div>
+    </div>
+  </div>
+</div>
+
+<dialog class="fc" id="fc" aria-labelledby="fctitle">
+  <div class="fc-top"><div><h2 id="fctitle">How AttnProcessor.__call__ runs</h2><p id="fchint"></p></div><button id="fcclose">Close</button></div>
+  <div class="fc-body"><p class="fc-legend" id="fclegend"></p><div class="fc-list" id="fclist"></div></div>
+</dialog>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="9 6 12 6 8 7 11 6" fill="none"/></svg>
+
+<section>
+  <h2>Where it sits in the sampling algorithm</h2>
+  <p class="hint">Ho et al. (2020), Algorithm 2, written in the survey's notation. This page is nested two levels inside row 3, not a row of its own.</p>
+  <div class="card algo" id="algo"></div>
+  <p class="fine">Row 3, \(\epsilon_\theta(x_t,t)\), is the entire UNet forward pass (a separate page, not yet built), which runs many transformer blocks, each of which calls this function twice: once for self-attention, once for cross-attention. Nothing else in Algorithm 2 names attention explicitly; it is an implementation detail of how \(\epsilon_\theta\) is computed, not a step the sampling algorithm itself specifies.</p>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="11 6 8 6 12 7 9 6" fill="none"/></svg>
+
+<section>
+  <h2>Derive it on paper</h2>
+  <p class="hint">The first opens the black box this page otherwise treats as a formula. The second is this page's actual point. The third traces real tensor shapes through the whole function.</p>
+  <div id="ders"></div>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="8 6 11 7 9 6 12 6" fill="none"/></svg>
+
+<section class="project">
+  <h2>What this means for your project</h2>
+  <p style="margin-top:8px">Cross-attention is the one place in the whole pipeline where the prompt's embeddings touch the image's features directly. Swap what <code>encoder_hidden_states</code> holds at line 1148 and 1149, and every <code>self.attn2</code> call in the UNet attends to something else instead, with no other code change.</p>
+  <p>Self-attention (<code>self.attn1</code>, <code>encoder_hidden_states=None</code>) never sees the prompt at all: it is the image's spatial features attending to themselves, the same function running the other branch of the <code>if</code> at line 1143.</p>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="10 6 9 7 12 6 8 6" fill="none"/></svg>
+
+<section>
+  <h2>Seen whole</h2>
+  <p class="hint">Spatial features on the left, the prompt on the right (when this is a cross-attention call); the blended result in the middle.</p>
+  <div class="card whole">\[\underbrace{\text{hidden\_states}}_{\text{image features}}\ \xrightarrow{\ Q\ }\ \underbrace{\mathrm{softmax}(QK^\top/\sqrt{d_{\text{head}}})}_{\text{attention\_probs}}\ \xleftarrow{\ K,V\ }\ \underbrace{\text{encoder\_hidden\_states}}_{\text{prompt or self}}\]</div>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="9 7 12 6 8 6 11 6" fill="none"/></svg>
+
+<section>
+  <h2>Terms on this page</h2>
+  <p class="hint">Each term means exactly one thing. Underlined terms elsewhere on the page link here.</p>
+  <h3 class="glh">Code terms</h3><p class="glsub">Names for places in the code. Each points at exactly one location.</p>
+  <dl class="terms">
+    <dt id="gl-attnprocessor">AttnProcessor vs AttnProcessor2_0</dt><dd>Two implementations of the same math. <code>AttnProcessor</code> (shown on this page, lines 1141 to 1162) computes query, key, value and the softmax explicitly in Python/PyTorch ops. <code>AttnProcessor2_0</code> instead calls <code>torch.nn.functional.scaled_dot_product_attention</code>, a single fused kernel that does the same thing faster. <code>Attention.__init__</code> (line 307) picks <code>AttnProcessor2_0</code> automatically whenever it's available, which it is on any PyTorch 2.0 or later install; so SD 1.5 running on a current PyTorch almost certainly executes the fused version, not the one shown here. This page pins the explicit one because it is the one that shows the actual formula instead of hiding it inside a kernel; the two compute the same result.</dd>
+    <dt id="gl-getattnscores">attn.get_attention_scores</dt><dd>The call this page treats as a black box at line 1155. Computes \(QK^\top\cdot\text{scale}\) with <code>torch.baddbmm</code>, then a softmax. Derivation 1 opens it.</dd>
+    <dt id="gl-reshapeheads">head_to_batch_dim / batch_to_head_dim</dt><dd>A pure reshape, no new math: merges the head dimension into the batch dimension before the attention matmuls (lines 1151 to 1153), then splits it back out afterward (line 1157). Exists so one <code>torch.bmm</code> call computes all heads' attention at once instead of looping over them.</dd>
+    <dt id="gl-normcross">attn.norm_cross</dt><dd>An optional extra normalization on <code>encoder_hidden_states</code> before it becomes key and value, line 1146. Off by default (<code>cross_attention_norm=None</code> in <code>Attention.__init__</code>); SD 1.5 does not use it.</dd>
+  </dl>
+  <h3 class="glh">Diffusion terms</h3><p class="glsub">The ideas the math is built from.</p>
+  <dl class="terms">
+    <dt id="gl-attention">Scaled dot-product attention, Vaswani et al. 2017 Eq. 1</dt><dd>\(\mathrm{Attention}(Q,K,V)=\mathrm{softmax}\big(QK^\top/\sqrt{d_k}\big)V\). Not restated in the survey (Fuest et al. 2024), which only describes cross-attention's role in conditioning, not the mechanism itself; this page cites the original Transformer paper for the formula.</dd>
+    <dt id="gl-crosscond">Cross-attention as conditioning</dt><dd>The survey's own framing (no equation number): a conditioning signal \(c\) is preprocessed by an encoder into \(E(c)\), then injected into the denoising network via cross-attention. On this page, \(c\) is the prompt, its encoder is CLIP (a separate page, not yet built), and \(E(c)\) is <code>encoder_hidden_states</code>, read in directly at line 1148 and 1149 with no further processing by this function.</dd>
+    <dt id="gl-qkv">Query, key, value</dt><dd>Three learned linear projections of the input. Query always comes from <code>hidden_states</code> (the image). Key and value come from whichever tensor is <code>encoder_hidden_states</code> at the time: the image itself, for self-attention; the prompt, for cross-attention. The only architectural difference between the two is this one substitution.</dd>
+    <dt id="gl-headdim">Heads, head dimension</dt><dd>Multi-head attention splits each of Q, K, V's channel dimension into several smaller, independent pieces ("heads"), runs attention separately per head, then concatenates the results back together. <code>Attention.__init__</code>'s defaults are <code>heads=8</code>, <code>dim_head=64</code> when not overridden; SD 1.5's UNet overrides these per block and the exact values were not confirmed in this environment (network blocked). The shapes below are illustrative of the pattern, not a fetched config.</dd>
+  </dl>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="11 6 9 6 12 7 8 6" fill="none"/></svg>
+
+<section>
+  <details>
+    <summary><span class="num">§</span><span class="q">Notation: where this page, the survey and the Transformer paper differ</span><span class="open"></span></summary>
+    <div class="dbody ntable">
+      <table>
+        <tr><th>Item</th><th>Survey (Fuest et al. 2024)</th><th>This page</th><th>Why it matters</th></tr>
+        <tr><td>Conditioning signal</td><td>\(c\), preprocessed to \(E(c)\), no equation number</td><td><code>encoder_hidden_states</code></td><td>Same idea; the survey names the concept in prose, not as a numbered formula.</td></tr>
+        <tr><td>Attention formula</td><td>Not stated</td><td>\(\mathrm{softmax}(QK^\top/\sqrt{d_k})V\), Vaswani et al. 2017 Eq. 1</td><td>The survey assumes the reader already knows standard attention; this page cites its actual source.</td></tr>
+        <tr><td>Multi-head split</td><td>Not covered</td><td><code>head_to_batch_dim</code>, a reshape, not a new equation</td><td>Engineering detail absent from both the survey and the original Transformer paper's own notation.</td></tr>
+      </table>
+    </div>
+  </details>
+</section>
+
+<section class="prov" style="margin-top:28px">
+  <h2>What is checked, and how</h2>
+  <p>Code and line numbers: read from diffusers v0.40.0, downloaded from PyPI in this environment (<code>pip download diffusers==0.40.0</code>, then read with Python's own file reader for exact whitespace) rather than recalled. <code>self.scale = dim_head**-0.5</code> read directly from <code>Attention.__init__</code>, line 168. <code>AttnProcessor2_0</code> being the default when available confirmed by reading the selection logic at line 307 of the same file.</p>
+  <p>Worked out from the source but not run: derivation 3's tensor shapes, done on paper from the reshape functions' own docstrings and bodies (lines 615 to 654), not executed as code. SD 1.5's actual <code>heads</code> and <code>dim_head</code> per UNet block were not fetched in this environment (Hub-style hosts are blocked by this sandbox's network policy); the shapes shown use the class defaults and the publicly documented pattern, flagged as illustrative, not a confirmed SD 1.5 config.</p>
+  <p>Papers: Fuest et al. 2024 (conditioning via cross-attention, no formula), Vaswani et al. 2017 (the attention formula itself, Eq. 1).</p>
+</section>
+
+</div>
+
+<script>
+
+(function(){
+"use strict";
+var R=String.raw;
+var pred="cross";
+
+/* ---------------- tokens: code name <-> math ---------------- */
+var T={
+ hidden_states:{name:"hidden_states",sym:R`X\ /\ O`,kind:"The function's argument, and its reassigned output",syms:["s-hs"],rows:["qkv","out"],
+  looks:function(){return "A torch.Tensor, e.g. (2, 4096, 320): the UNet's spatial features at this block's resolution, flattened to (tokens, channels). Reassigned at line 1156 to the attention output, same shape."},
+  math:R`<p>\(X\) going in (query's source, line 1141); \(O\) coming out (line 1156 to 1162, after the weighted sum and the output projection). One code variable, two different tensors, same role: the UNet's working features at this block.</p>`,
+  flow:"The function's argument, passed by BasicTransformerBlock as norm_hidden_states (self.attn1 call) or hidden_states after self-attention (self.attn2 call), attention.py line 1043. Reassigned at lines 1156, 1157, 1160 and 1162; the final value is returned to that caller."},
+ encoder_hidden_states:{name:"encoder_hidden_states",sym:R`C`,kind:"The function's argument, or None",syms:["s-chs"],rows:["qkv"],
+  looks:function(){return pred==="cross"?"A torch.Tensor, (2, 77, 768): CLIP's prompt embeddings (2 for classifier-free guidance's two branches, 77 tokens, 768 CLIP channels)":"None at the call site; reassigned to hidden_states itself at line 1144, so effectively (2, 4096, 320), the same tensor as hidden_states"},
+  math:function(){return pred==="cross"?R`<p>\(C=\)\(\texttt{encoder\_hidden\_states}\), the prompt. Line 1143's <code>if</code> is false (it was passed in), so lines 1144 to 1146 are skipped; \(C\) is read as-is at line 1148 and 1149.</p>`:R`<p>\(C=X\): line 1143's <code>if</code> is true (nothing was passed), so line 1144 sets <code>encoder_hidden_states = hidden_states</code>. Self-attention is cross-attention with \(C=X\), not a different formula.</p>`},
+  flow:"Passed in as None (self.attn1, self-attention) or as prompt_embeds (self.attn2, cross-attention), from BasicTransformerBlock.forward, attention.py line 1043. Read (or set, if None) at lines 1143 to 1146. Feeds key and value at lines 1148 and 1149."},
+ query:{name:"query",sym:"Q",kind:"A projection of hidden_states, computed",syms:["s-q"],rows:["qkv","attn"],
+  looks:function(){return "(2, 4096, 320) after line 1141, then (16, 4096, 40) after line 1151's reshape (illustrative head count/dim, see Terms)"},
+  math:R`<p>\(Q=XW_Q\), a learned linear projection (<code>attn.to_q</code>) of hidden_states. Always comes from the image's own features, in both self- and cross-attention: the query never changes with the switch above.</p>`,
+  flow:"Computed at line 1141 from hidden_states. Reshaped at line 1151. Read once, at line 1155, inside get_attention_scores."},
+ key:{name:"key",sym:"K",kind:"A projection of encoder_hidden_states, computed",syms:["s-k"],rows:["qkv","attn"],
+  looks:function(){return pred==="cross"?"(2, 77, 320) after line 1148, then (16, 77, 40) after line 1152's reshape":"(2, 4096, 320) after line 1148, then (16, 4096, 40) after line 1152's reshape, same shape as query"},
+  math:R`<p>\(K=CW_K\), a learned linear projection (<code>attn.to_k</code>) of encoder_hidden_states. This is the token that changes meaning with the switch above: cross-attention's \(C\) is the prompt, self-attention's \(C\) is the image itself.</p>`,
+  flow:"Computed at line 1148 from encoder_hidden_states. Reshaped at line 1152. Read once, at line 1155, inside get_attention_scores."},
+ value:{name:"value",sym:"V",kind:"A projection of encoder_hidden_states, computed",syms:["s-v"],rows:["qkv","out"],
+  looks:function(){return pred==="cross"?"(2, 77, 320) after line 1149, then (16, 77, 40) after line 1153's reshape":"(2, 4096, 320) after line 1149, then (16, 4096, 40) after line 1153's reshape"},
+  math:R`<p>\(V=CW_V\), a learned linear projection (<code>attn.to_v</code>) of encoder_hidden_states, the same source as key. What actually gets blended into the output at line 1156; query and key only decide how much of each.</p>`,
+  flow:"Computed at line 1149 from encoder_hidden_states. Reshaped at line 1153. Read once, at line 1156, in the weighted sum."},
+ reshape_heads:{name:"head_to_batch_dim / batch_to_head_dim",sym:null,kind:"A reshape, engineering only",syms:[],rows:["out"],
+  looks:function(){return "(batch, tokens, 320) split into (batch×heads, tokens, 320/heads) going in; the inverse coming back out"},
+  math:"<p class='none'>No math of its own: merges the head dimension into the batch dimension so one torch.bmm computes every head's attention at once, then splits it back out. Derivation 3 traces the exact shapes.</p>",
+  flow:"Applied to query, key and value at lines 1151 to 1153 (splitting). Applied to the attention output at line 1157 (merging back)."},
+ attention_mask:{name:"attention_mask",sym:"M",kind:"The function's argument, usually None",syms:[],rows:[],
+  looks:function(){return "None for SD 1.5's typical case: CLIP always pads prompts to 77 tokens, so no mask is needed to hide padding"},
+  math:"<p class='none'>No math on this page when None (the common case): get_attention_scores adds nothing to the raw scores. When provided, it is added to QK^T before the softmax, the standard additive-mask trick.</p>",
+  flow:"Passed in from BasicTransformerBlock (usually None). Read once, at line 1155, inside get_attention_scores."},
+ get_attention_scores:{name:"attn.get_attention_scores",sym:null,kind:"The call this page treats as a black box",syms:[],rows:["attn"],
+  looks:function(){return "A method call, not shown on this page; returns a tensor of shape (16, 4096, 77) for a cross-attention call at this illustrative resolution"},
+  math:R`<p>Computes \(\mathrm{softmax}(QK^\top\cdot\text{scale}+M)\), Vaswani et al. 2017 Eq. 1 with scale \(=d_{\text{head}}^{-1/2}\). What it actually does is derivation 1.</p>`,
+  flow:"Called at line 1155 with (query, key, attention_mask). Returns the value stored in attention_probs."},
+ attention_probs:{name:"attention_probs",sym:"A",kind:"A number, the result of get_attention_scores",syms:["s-ap"],rows:["attn","out"],
+  looks:function(){return "(16, 4096, 77): for every one of the 4096 spatial positions, a probability distribution over the 77 prompt tokens (cross-attention case)"},
+  math:R`<p>\(A=\mathrm{softmax}(QK^\top\cdot\text{scale})\), rows summing to 1. Each spatial position's row says how much attention it pays to each of the 77 prompt tokens, in the cross-attention case; to each of the other spatial positions, in the self-attention case.</p>`,
+  flow:"Written at line 1155. Read once, at line 1156, in the weighted sum with value."},
+ to_out:{name:"attn.to_out",sym:null,kind:"A linear layer plus dropout, engineering",syms:[],rows:["out"],
+  looks:function(){return "A torch.nn.ModuleList of 2: to_out[0] a Linear(320, 320), to_out[1] a Dropout"},
+  math:"<p class='none'>No math on this page beyond a standard affine map: O_final = W_O · O + b_O, then dropout (identity at inference). Not part of the attention formula itself, a post-projection every attention block has.</p>",
+  flow:"Applied to hidden_states at lines 1160 and 1162, after the reshape at line 1157. The result is this function's return value."}
+};
+var SYM2TOK={"s-hs":"hidden_states","s-chs":"encoder_hidden_states","s-q":"query","s-k":"key","s-v":"value","s-ap":"attention_probs"};
+
+/* ---------------- code ---------------- */
+var CODE=[
+ [1141,"        [[query|query]] = attn.to_q([[hidden_states|hidden_states]])"],
+ [1142,""],
+ [1143,"        <k>if</k> [[encoder_hidden_states|encoder_hidden_states]] is None:"],
+ [1144,"            [[encoder_hidden_states|encoder_hidden_states]] = [[hidden_states|hidden_states]]"],
+ [1145,"        <k>elif</k> attn.norm_cross:"],
+ [1146,"            [[encoder_hidden_states|encoder_hidden_states]] = attn.norm_encoder_hidden_states([[encoder_hidden_states|encoder_hidden_states]])"],
+ [1147,""],
+ [1148,"        [[key|key]] = attn.to_k([[encoder_hidden_states|encoder_hidden_states]])"],
+ [1149,"        [[value|value]] = attn.to_v([[encoder_hidden_states|encoder_hidden_states]])"],
+ [1150,""],
+ [1151,"        [[query|query]] = attn.[[reshape_heads|head_to_batch_dim]]([[query|query]])"],
+ [1152,"        [[key|key]] = attn.[[reshape_heads|head_to_batch_dim]]([[key|key]])"],
+ [1153,"        [[value|value]] = attn.[[reshape_heads|head_to_batch_dim]]([[value|value]])"],
+ [1154,""],
+ [1155,"        [[attention_probs|attention_probs]] = attn.[[get_attention_scores|get_attention_scores]](query, key, [[attention_mask|attention_mask]])"],
+ [1156,"        [[hidden_states|hidden_states]] = torch.bmm([[attention_probs|attention_probs]], [[value|value]])"],
+ [1157,"        [[hidden_states|hidden_states]] = attn.[[reshape_heads|batch_to_head_dim]]([[hidden_states|hidden_states]])"],
+ [1158,""],
+ [1159,"        <c># linear proj</c>"],
+ [1160,"        [[hidden_states|hidden_states]] = attn.[[to_out|to_out]][0]([[hidden_states|hidden_states]])"],
+ [1161,"        <c># dropout</c>"],
+ [1162,"        [[hidden_states|hidden_states]] = attn.[[to_out|to_out]][1]([[hidden_states|hidden_states]])"]
+];
+var ENG={reshape_heads:1,attention_mask:1,to_out:1};
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+function line(src){
+  var out="",re=/\[\[(\w+)\|(.+?)\]\]|<k>(.*?)<\/k>|<s>(.*?)<\/s>|<c>(.*?)<\/c>/g,last=0,m;
+  while((m=re.exec(src))){
+    out+=src.slice(last,m.index);
+    if(m[1])out+='<span class="tok'+(ENG[m[1]]?" eng":"")+'" tabindex="0" role="button" data-id="'+m[1]+'">'+esc(m[2])+'</span>';
+    else if(m[3]!==undefined)out+='<span class="kw">'+esc(m[3])+'</span>';
+    else if(m[4]!==undefined)out+='<span class="str">'+esc(m[4])+'</span>';
+    else out+='<span class="com">'+esc(m[5])+'</span>';
+    last=re.lastIndex;
+  }
+  return out+src.slice(last);
+}
+document.getElementById("code").innerHTML=CODE.map(function(l){return '<div class="ln" data-ln="'+l[0]+'"><span class="n">'+l[0]+'</span><span class="t">'+line(l[1])+'</span></div>'}).join("");
+
+/* ---------------- math rows ---------------- */
+var ROWS={
+ qkv:{tex:R`\class{s-q}{Q}=\class{s-hs}{X}\,W_Q,\qquad[\class{s-k}{K};\class{s-v}{V}]=\class{s-chs}{C}\,[W_K;W_V]`,where:"lines 1141 to 1149",lines:[1141,1149],tok:"query"},
+ attn:{tex:R`\class{s-ap}{A}=\mathrm{softmax}\!\left(\dfrac{\class{s-q}{Q}\,\class{s-k}{K}^{\!\top}}{\sqrt{d_{\text{head}}}}\right)`,where:"line 1155, get_attention_scores (black box)",lines:[1155,1155],tok:"attention_probs"},
+ out:{tex:R`\class{s-hs}{O}=\class{s-ap}{A}\,\class{s-v}{V}\ \xrightarrow{\ \text{to\_out}\ }\ \class{s-hs}{\text{hidden\_states}}`,where:"lines 1156 to 1162",lines:[1156,1162],tok:"hidden_states"}
+};
+document.getElementById("mrows").innerHTML=Object.keys(ROWS).map(function(k){return '<div class="mrow" data-row="'+k+'" tabindex="0" role="button"><div class="eq">\\['+ROWS[k].tex+'\\]</div><span class="where">'+ROWS[k].where+'</span></div>'}).join("");
+
+/* ---------------- inspector panels (built once) ---------------- */
+var insp=document.getElementById("insp");
+Object.keys(T).forEach(function(id){
+  var t=T[id],p=document.createElement("div");p.className="panel";p.dataset.id=id;
+  var h='<div class="ih"><span class="cn">'+esc(t.name)+'</span>'+(t.sym?'<span class="arrow">is</span><span>\\('+t.sym+'\\)</span>':'')+'</div>';
+  h+='<p class="kind">'+t.kind+'</p>';
+  h+='<div class="f"><h3>Looks like</h3><div class="looks" data-looks></div></div>';
+  h+='<div class="f"><h3>In the math</h3><div data-math></div></div>';
+  h+='<div class="f"><h3>Comes from, goes to</h3><p>'+esc(t.flow)+'</p><button class="flowbtn" data-flow="'+id+'">Show this on the flowchart</button></div>';
+  if(t.note)h+='<div class="note" data-note></div>';
+  p.innerHTML=h;insp.appendChild(p);
+});
+
+/* ---------------- dynamic text ---------------- */
+function refreshDynamic(){
+  document.querySelectorAll(".panel").forEach(function(p){
+    var t=T[p.dataset.id];p.querySelector("[data-looks]").textContent=t.looks();
+    var mel=p.querySelector("[data-math]");mel.innerHTML=typeof t.math==="function"?t.math():t.math;
+    var n=p.querySelector("[data-note]");if(n){n.textContent=typeof t.note==="function"?t.note():t.note;linkTerms(n);linkLines(n)}
+  });
+  document.getElementById("sigcap").textContent=pred==="cross"?"Right now: cross-attention. encoder_hidden_states holds the prompt; key and value come from it.":"Right now: self-attention. encoder_hidden_states is None, reassigned to hidden_states at line 1144; key and value come from the image's own features.";
+}
+
+/* ---------------- linking ---------------- */
+var pinned="attention_probs",hover=null;
+function mathEls(cls){return document.querySelectorAll("mjx-container g."+cls)}
+function paint(){
+  var id=hover||pinned,t=T[id];
+  document.querySelectorAll(".tok").forEach(function(e){e.classList.toggle("on",e.dataset.id===id&&id!==pinned);e.classList.toggle("pin",e.dataset.id===pinned)});
+  document.querySelectorAll("mjx-container g.on").forEach(function(g){g.classList.remove("on")});
+  t.syms.forEach(function(c){mathEls(c).forEach(function(g){g.classList.add("on")})});
+  document.querySelectorAll(".mrow").forEach(function(r){r.classList.toggle("lit",t.rows.indexOf(r.dataset.row)>=0)});
+  var lit={};t.rows.forEach(function(k){for(var n=ROWS[k].lines[0];n<=ROWS[k].lines[1];n++)lit[n]=1});
+  document.querySelectorAll(".ln").forEach(function(l){l.classList.toggle("lit",!!lit[l.dataset.ln])});
+  document.querySelectorAll(".panel").forEach(function(p){p.classList.toggle("show",p.dataset.id===id)});
+}
+var narrow=matchMedia("(max-width:900px)");
+function openSheet(on){document.getElementById("inspzone").classList.toggle("open",on&&narrow.matches)}
+function pin(id,fromUser){pinned=id;hover=null;paint();if(fromUser!==false)openSheet(true)}
+document.getElementById("closer").addEventListener("click",function(e){e.stopPropagation();openSheet(false)});
+var code=document.getElementById("code");
+code.addEventListener("mouseover",function(e){var t=e.target.closest(".tok");if(t){hover=t.dataset.id;paint()}});
+code.addEventListener("mouseleave",function(){hover=null;paint()});
+code.addEventListener("click",function(e){var t=e.target.closest(".tok");if(t)pin(t.dataset.id)});
+code.addEventListener("keydown",function(e){var t=e.target.closest(".tok");if(t&&(e.key==="Enter"||e.key===" ")){e.preventDefault();pin(t.dataset.id)}});
+function symOf(el){var g=el.closest&&el.closest("g[class]");while(g){var cls=(g.getAttribute("class")||"").split(/\s+/).filter(function(c){return SYM2TOK[c]});if(cls.length)return SYM2TOK[cls[0]];g=g.parentElement&&g.parentElement.closest("g[class]")}return null}
+document.addEventListener("mouseover",function(e){if(!e.target.closest||!e.target.closest("mjx-container"))return;var id=symOf(e.target);if(id&&id!==hover){hover=id;paint()}});
+document.addEventListener("mouseout",function(e){if(e.target.closest&&e.target.closest("mjx-container")&&hover&&!(e.relatedTarget&&e.relatedTarget.closest&&e.relatedTarget.closest("mjx-container"))){hover=null;paint()}});
+document.addEventListener("click",function(e){
+  if(e.target.closest&&e.target.closest("mjx-container")){var id=symOf(e.target);if(id){pin(id);e.stopPropagation();return}}
+  var r=e.target.closest&&e.target.closest(".mrow");if(r){pin(ROWS[r.dataset.row].tok);return}
+  var c=e.target.closest&&e.target.closest("[data-go]");if(c){pin(c.dataset.go);document.getElementById("code").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"})}
+},true);
+document.getElementById("mrows").addEventListener("keydown",function(e){var r=e.target.closest(".mrow");if(r&&(e.key==="Enter"||e.key===" ")){e.preventDefault();pin(ROWS[r.dataset.row].tok)}});
+document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!fc.open){if(document.getElementById("inspzone").classList.contains("open"))openSheet(false);else pin("attention_probs",false)}});
+document.querySelectorAll(".switch button").forEach(function(b){b.addEventListener("click",function(){
+  pred=b.dataset.p;document.querySelectorAll(".switch button").forEach(function(x){x.setAttribute("aria-pressed",x===b)});refreshDynamic();
+})});
+
+/* ---------------- algorithm ---------------- */
+var ALGO=[
+ [R`x_T\sim\pi(x_T)=\mathcal N(0,I)`,"prepare_latents, a separate page.","p. 2"],
+ [R`\textbf{for } t=T,\dots,1\ \textbf{do}`,"the denoising loop, a separate page, line 1032",""],
+ [R`\epsilon_\theta(x_t,t)`,"the UNet forward (a separate page), which calls this function many times",""],
+ [R`\mu_\theta(x_t,t)=\tfrac{1}{\sqrt{\alpha_t}}\Big(x_t-\tfrac{1-\alpha_t}{\sqrt{1-\bar\alpha_t}}\,\epsilon_\theta(x_t,t)\Big)`,"not on this page: a separate page (DDIM's reverse step) computes this differently",""],
+ [R`x_{t-1}\sim\mathcal N\big(\mu_\theta(x_t,t),\,\Sigma_\theta\big)`,"not on this page: the reverse step, a separate page",""],
+ [R`\textbf{return } x_0`,"after the denoising loop ends: vae.decode, a separate page",""]
+];
+document.getElementById("algo").innerHTML=ALGO.map(function(a,i){
+  var here=(i===2);
+  var eqref=a[2];
+  return '<div class="arow'+(here?" here":"")+'"><span class="k">'+(i+1)+'</span><div class="eq">\\('+a[0]+'\\)'+(eqref&&typeof eqref==="string"?'<span class="eqref">'+(eqref.indexOf("survey")===0||eqref.indexOf("p.")===0?eqref:"survey "+eqref)+'</span>':'')+'</div><div class="map">'+a[1]+'</div></div>';
+}).join("");
+
+/* ---------------- derivations ---------------- */
+var DERS=[
+ {q:"Derive softmax(QK^T/√d) from get_attention_scores's actual torch.baddbmm call.",
+  steps:[
+   [R`\text{torch.baddbmm}(\text{input},\,Q,\,K^\top,\,\beta,\,\alpha)=\beta\cdot\text{input}+\alpha\cdot(QK^\top)`,"baddbmm's own definition: a batched matmul plus a scaled bias term."],
+   [R`\text{no mask: input is empty, }\beta=0\ \Rightarrow\ \beta\cdot\text{input}=0`,"When attention_mask is None (SD 1.5's common case), the bias term vanishes entirely."],
+   [R`\alpha=\text{self.scale}=d_{\text{head}}^{-1/2}`,"Read directly from Attention.__init__, line 168: self.scale = dim_head**-0.5 when scale_qk is on (the default)."],
+   [R`\Rightarrow\ \text{attention\_scores}=QK^\top\cdot d_{\text{head}}^{-1/2}=\frac{QK^\top}{\sqrt{d_{\text{head}}}}`,"Exactly Vaswani et al.'s scaling term. A final .softmax(dim=-1) turns scores into attention_probs."]
+  ],
+  answer:R`<p>get_attention_scores computes \(\mathrm{softmax}(QK^\top/\sqrt{d_{\text{head}}})\), Vaswani et al. 2017 Eq. 1, with no mask term when attention_mask is None. The baddbmm call is an optimization (one fused op instead of a separate matmul and add), not a different formula.</p>`,
+  chips:[["get_attention_scores","self._get_attention_scores"],["attention_probs","attention_probs"]]},
+ {q:"Read lines 1143 to 1146. What actually makes a call self- vs cross-attention?",
+  steps:[
+   [R`\text{self.attn1(norm\_hidden\_states)}\ \Rightarrow\ \texttt{encoder\_hidden\_states}=\text{None}`,"attention.py line 1035 area: the self-attention call passes nothing for encoder_hidden_states."],
+   [R`\text{line 1143 to 1144: if None, } C:=X`,"encoder_hidden_states is reassigned to hidden_states itself. Key and value now come from the same tensor as query."],
+   [R`\text{self.attn2(norm\_hidden\_states, encoder\_hidden\_states=prompt\_embeds)}`,"attention.py line 1043: the cross-attention call passes the prompt embeddings explicitly."],
+   [R`\text{line 1143: not None, so lines 1144 to 1146 are skipped (unless norm\_cross)}\ \Rightarrow\ C=\text{prompt}`,"Key and value now come from the prompt instead."]
+  ],
+  answer:R`<p>Nothing else differs. Query is always a projection of hidden_states; key and value are always a projection of encoder_hidden_states; the only thing that changes between self- and cross-attention is what the caller passes as encoder_hidden_states before this function ever runs. "Cross-attention" names a calling convention, not a different formula.</p>`,
+  chips:[["encoder_hidden_states","encoder_hidden_states"],["query","query"]]},
+ {q:"One level down: trace real tensor shapes through lines 1141 to 1162 for a cross-attention call at the UNet's first block.",
+  steps:[
+   [R`X:(2,4096,320),\quad C:(2,77,768)`,"Illustrative shapes: batch 2 (classifier-free guidance's two branches), 64×64 spatial flattened to 4096 tokens at 320 channels; CLIP's 77 tokens at 768 channels. Not a fetched SD 1.5 config; see Terms."],
+   [R`Q=XW_Q:(2,4096,320),\quad K=CW_K,\,V=CW_V:(2,77,320)`,"to_q, to_k, to_v are Linear layers with no bias; to_k and to_v map CLIP's 768 channels down to this block's 320."],
+   [R`\text{head\_to\_batch\_dim}:\ Q{:}(16,4096,40),\ K,V{:}(16,77,40)`,"heads=8, dim_head=40 here (320/8), illustrative. Heads merge into the batch dimension: 2×8=16."],
+   [R`A=\text{softmax}(QK^\top/\sqrt{40}):(16,4096,77)`,"One row per spatial position, one column per prompt token: this is the literal cross-attention map."],
+   [R`O=AV:(16,4096,40)\ \xrightarrow{\text{batch\_to\_head\_dim}}\ (2,4096,320)\ \xrightarrow{\text{to\_out}}\ (2,4096,320)`,"Heads split back out of the batch dimension; final shape matches the original hidden_states exactly."]
+  ],
+  answer:R`<p>The attention matrix A is genuinely (spatial tokens) × (prompt tokens): 4096 × 77 at this resolution. Every one of the UNet's 4096 spatial positions gets its own weighted mixture of the 77 prompt tokens, which is the mechanism by which the prompt's words end up influencing different regions of the generated image differently.</p>`,
+  chips:[["reshape_heads","head_to_batch_dim"],["attention_probs","attention_probs"]]}
+];
+document.getElementById("ders").innerHTML=DERS.map(function(d,i){
+  return '<details><summary><span class="num">'+(i+1)+'</span><span class="q">'+d.q+'</span><span class="open"></span></summary><div class="dbody"><ol class="steps">'+
+   d.steps.map(function(s){return '<li><div class="eq">\\['+s[0]+'\\]</div><div class="why">'+s[1]+'</div></li>'}).join("")+
+   '</ol><div class="answer"><h3>'+(i<2?"The answer in one line":"The answer in two lines")+'</h3>'+d.answer+'</div><div class="chips">'+
+   d.chips.map(function(c){return '<button class="chip" data-go="'+c[0]+'">Show '+esc(c[1])+' in the code</button>'}).join("")+'</div></div></details>';
+}).join("");
+
+/* ---------------- flowchart dialog (this function's own steps, linear) ---------------- */
+var FN={
+ IN:{t:"Inputs",l:"from BasicTransformerBlock, line 1043 or 1035",d:"What AttnProcessor.__call__ receives (this page's slice begins after an earlier group_norm step).",
+  takes:"nothing yet",gives:"hidden_states = X, encoder_hidden_states = prompt or None, attention_mask = usually None"},
+ S1:{t:"Step 1: query",l:"line 1141",d:"Q = attn.to_q(hidden_states). Always from the image's own features.",takes:"hidden_states",gives:"query"},
+ S2:{t:"Step 2: resolve encoder_hidden_states",l:"lines 1143 to 1146",d:"If None, set it to hidden_states itself (self-attention). Otherwise use what was passed (cross-attention).",takes:"encoder_hidden_states, hidden_states",gives:"encoder_hidden_states, resolved"},
+ S3:{t:"Step 3: key, value",l:"lines 1148 to 1149",d:"K and V, both projections of whatever encoder_hidden_states resolved to.",takes:"encoder_hidden_states",gives:"key, value"},
+ S4:{t:"Step 4: split heads",l:"lines 1151 to 1153",d:"Merge the head dimension into the batch dimension so one matmul handles every head.",takes:"query, key, value",gives:"query, key, value, reshaped"},
+ S5:{t:"Step 5: attention scores",l:"line 1155",d:"get_attention_scores (a black box here) gives softmax(QK^T/√d); zero mask contribution when attention_mask is None.",takes:"query, key, attention_mask",gives:"attention_probs"},
+ S6:{t:"Step 6: weighted sum",l:"lines 1156 to 1157",d:"Blend value by the attention weights, then split the head dimension back out.",takes:"attention_probs, value",gives:"hidden_states, reshaped back"},
+ S7:{t:"Step 7: output projection",l:"lines 1160 and 1162",d:"A final linear layer plus dropout (identity at inference).",takes:"hidden_states",gives:"hidden_states, final"},
+ OUT:{t:"Output",l:"returned to BasicTransformerBlock",d:"The attention block's output, added back to the residual stream, attention.py line 1050 (self-attention) or 1051 (cross-attention).",takes:"hidden_states",gives:"the next layer's input"}
+};
+var ORDER=["IN","S1","S2","S3","S4","S5","S6","S7","OUT"];
+var HOPS={
+ hidden_states:[["IN","hidden_states=X","the call"],["S1","query = attn.to_q(hidden_states)","line 1141"],["S2","encoder_hidden_states = hidden_states (self-attn only)","line 1144"],["S6","hidden_states = torch.bmm(attention_probs, value)","line 1156"],["S7","hidden_states = attn.to_out[0](hidden_states)","line 1160"]],
+ encoder_hidden_states:[["IN","encoder_hidden_states=prompt or None","the call"],["S2","if encoder_hidden_states is None: ...","lines 1143 to 1146"],["S3","key = attn.to_k(encoder_hidden_states)","line 1148"]],
+ query:[["S1","query = attn.to_q(hidden_states)","line 1141"],["S4","query = attn.head_to_batch_dim(query)","line 1151"],["S5","attn.get_attention_scores(query, key, attention_mask)","line 1155"]],
+ key:[["S3","key = attn.to_k(encoder_hidden_states)","line 1148"],["S4","key = attn.head_to_batch_dim(key)","line 1152"],["S5","attn.get_attention_scores(query, key, attention_mask)","line 1155"]],
+ value:[["S3","value = attn.to_v(encoder_hidden_states)","line 1149"],["S4","value = attn.head_to_batch_dim(value)","line 1153"],["S6","torch.bmm(attention_probs, value)","line 1156"]],
+ reshape_heads:[["S4","query/key/value = attn.head_to_batch_dim(...)","lines 1151 to 1153"],["S6","hidden_states = attn.batch_to_head_dim(hidden_states)","line 1157"]],
+ attention_mask:[["IN","attention_mask=None (SD 1.5's usual case)","the call"],["S5","attn.get_attention_scores(query, key, attention_mask)","line 1155"]],
+ get_attention_scores:[["S5","attention_probs = attn.get_attention_scores(query, key, attention_mask)","line 1155"]],
+ attention_probs:[["S5","attention_probs = attn.get_attention_scores(...)","line 1155"],["S6","hidden_states = torch.bmm(attention_probs, value)","line 1156"]],
+ to_out:[["S7","hidden_states = attn.to_out[0](hidden_states); attn.to_out[1](hidden_states)","lines 1160 and 1162"]]
+};
+var fc=document.getElementById("fc"),fclist=document.getElementById("fclist"),flowOpenFor=null;
+function nodeHTML(k,cls){
+  var n=FN[k];
+  return '<button class="fnode'+(cls||"")+'" data-node="'+k+'" aria-expanded="false"><span class="ft"><b>'+esc(n.t)+'</b><span>'+esc(n.l)+'</span></span><span class="fd">'+esc(n.d)+'</span><span class="fmore"><b>Takes</b> '+esc(n.takes)+'<br><b>Gives</b> '+esc(n.gives)+'</span><span class="hops"></span></button>';
+}
+function buildChart(){
+  var h="";
+  ORDER.forEach(function(k,i){
+    if(i)h+='<div class="fconn"></div>';
+    h+=nodeHTML(k);
+  });
+  fclist.innerHTML=h;
+}
+buildChart();
+fclist.addEventListener("click",function(e){var b=e.target.closest(".fnode");if(!b)return;var on=!b.classList.contains("expanded");b.classList.toggle("expanded",on);b.setAttribute("aria-expanded",on)});
+function renderFlow(id){
+  flowOpenFor=id;
+  fclist.querySelectorAll(".fnode").forEach(function(b){b.classList.remove("lit","expanded");b.setAttribute("aria-expanded","false");b.querySelector(".hops").innerHTML=""});
+  if(!id){
+    fclist.classList.remove("tracing");
+    document.getElementById("fctitle").textContent="How AttnProcessor.__call__ runs";
+    document.getElementById("fchint").textContent="Top to bottom, the order one call runs in. Tap any box to see what it takes and what it gives.";
+    document.getElementById("fclegend").textContent="This whole chart is one function call; it does not loop or branch into other pages.";
+    return;
+  }
+  var name=T[id].name.replace(/ \(.*\)$/,"");
+  fclist.classList.add("tracing");
+  document.getElementById("fctitle").textContent="Where "+name+" travels";
+  document.getElementById("fchint").textContent="The lit boxes are the steps it passes through. Numbers give the order.";
+  document.getElementById("fclegend").textContent="Faded boxes do not touch it. Tap any box to see what it takes and what it gives.";
+  (HOPS[id]||[]).forEach(function(hp,i){
+    var b=fclist.querySelector('[data-node="'+hp[0]+'"]');if(!b)return;
+    b.classList.add("lit");
+    b.querySelector(".hops").insertAdjacentHTML("beforeend",'<span class="hop"><i>'+(i+1)+'</i><code>'+esc(hp[1])+'</code><span>'+esc(hp[2])+'</span></span>');
+  });
+}
+function openFlow(id){
+  openSheet(false);renderFlow(id||null);
+  if(typeof fc.showModal==="function")fc.showModal();else fc.setAttribute("open","");
+  var first=id?fclist.querySelector(".fnode.lit"):null,body=fc.querySelector(".fc-body");
+  body.scrollTop=0;
+  if(first){requestAnimationFrame(function(){body.scrollTop=Math.max(0,first.getBoundingClientRect().top-body.getBoundingClientRect().top-12)})}
+}
+function closeFlow(){if(fc.open){if(typeof fc.close==="function")fc.close();else fc.removeAttribute("open")}flowOpenFor=null}
+document.getElementById("fcclose").addEventListener("click",closeFlow);
+fc.addEventListener("close",function(){flowOpenFor=null});
+fc.addEventListener("click",function(e){if(e.target===fc)closeFlow()});
+document.getElementById("openflow").addEventListener("click",function(){openFlow(null)});
+insp.addEventListener("click",function(e){var b=e.target.closest(".flowbtn");if(b)openFlow(b.dataset.flow)});
+
+/* ---------------- light follows the day ---------------- */
+var root=document.documentElement;
+function applyLight(){
+  var h=new Date().getHours(),tod=h>=5&&h<12?"morning":h>=12&&h<17?"afternoon":h>=17&&h<22?"evening":"night";
+  var forced=root.getAttribute("data-theme"),prefDark=matchMedia("(prefers-color-scheme: dark)").matches;
+  var dark=forced==="dark"||(forced!=="light"&&prefDark);
+  var scheme,ground,light;
+  if(forced==="light"||(!dark&&(tod==="morning"||tod==="afternoon"))){
+    scheme="day";
+    ground=tod==="morning"?"#F6EEE1":"#F4EEE4";
+    light=tod==="morning"?"radial-gradient(1100px 520px at 0% 0%,rgba(255,236,200,.55),transparent 70%)"
+         :tod==="afternoon"?"radial-gradient(1200px 420px at 50% -10%,rgba(255,244,214,.6),transparent 70%)"
+         :"radial-gradient(900px 480px at 50% 110%,rgba(242,154,46,.14),transparent 70%)";
+  } else {
+    scheme="night";
+    if(tod==="night"){ground="#1A1512";light="radial-gradient(900px 460px at 50% 115%,rgba(242,154,46,.12),transparent 70%)";}
+    else{ground="#33241F";light=tod==="evening"?"radial-gradient(800px 520px at 105% 20%,rgba(224,120,74,.16),transparent 70%)":"radial-gradient(900px 460px at 50% 115%,rgba(242,154,46,.10),transparent 70%)";}
+  }
+  root.setAttribute("data-scheme",scheme);
+  root.style.setProperty("--ground",ground);
+  root.style.setProperty("--light",light);
+  if(scheme==="night"&&ground==="#33241F"){root.style.setProperty("--card","#2A1E1A");root.style.setProperty("--code-bg","#2A1E1A")}
+  else{root.style.removeProperty("--card");root.style.removeProperty("--code-bg")}
+}
+new MutationObserver(function(ms){if(ms.some(function(m){return m.attributeName==="data-theme"}))applyLight()}).observe(root,{attributes:true});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",applyLight);
+setInterval(applyLight,5*60*1000);
+
+/* ---------------- glossary links ---------------- */
+var GLP=[[/Vaswani et al\.?(?:\s*\d{4})?\s+Eq\. 1/,"attention"],[/\bAttnProcessor2_0\b/,"attnprocessor"],[/\bAttnProcessor\b/,"attnprocessor"],[/get_attention_scores/,"getattnscores"],[/head_to_batch_dim|batch_to_head_dim/,"reshapeheads"],[/norm_cross/,"normcross"],[/cross-attention/i,"crosscond"],[/self-attention/i,"qkv"],[/\bquery\b|\bkey\b|\bvalue\b/i,"qkv"],[/\bheads?\b|\bhead dimension\b|dim_head/i,"headdim"]];
+function linkTerms(root){
+  var used={},walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:function(n){
+    var p=n.parentElement;if(!p||p.closest("code,a,button,.gl,.looks,mjx-container,dialog,script,style"))return NodeFilter.FILTER_REJECT;return NodeFilter.FILTER_ACCEPT}});
+  var nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+  nodes.forEach(function(tn){
+    var parts=tn.nodeValue.split(/(\\\(.*?\\\)|\\\[[\s\S]*?\\\])/),changed=false,frag=document.createDocumentFragment();
+    parts.forEach(function(seg,k){
+      if(k%2===1||!seg){frag.appendChild(document.createTextNode(seg));return}
+      var rest=seg;
+      while(rest){
+        var best=null;
+        GLP.forEach(function(g){if(used[g[1]])return;var m=g[0].exec(rest);if(m&&(!best||m.index<best.m.index))best={m:m,id:g[1]}});
+        if(!best){frag.appendChild(document.createTextNode(rest));break}
+        changed=true;used[best.id]=1;
+        frag.appendChild(document.createTextNode(rest.slice(0,best.m.index)));
+        var a=document.createElement("span");a.className="gl";a.setAttribute("role","button");a.tabIndex=0;a.dataset.gl=best.id;a.title="See this in Terms on this page";a.textContent=best.m[0];frag.appendChild(a);
+        rest=rest.slice(best.m.index+best.m[0].length);
+      }
+    });
+    if(changed)tn.parentNode.replaceChild(frag,tn);
+  });
+}
+document.querySelectorAll(".lede,.callbar p,.hint,.fine,.project p,.dbody .why,.answer,.panel .f p,.panel .note,.panel .kind,.arow .map,.prov p,.ntable td,.sigcap").forEach(function(el){if(!el.closest("section")||!el.closest("section").querySelector("dl.terms"))linkTerms(el)});
+function goGloss(a){
+  openSheet(false);
+  var dt=document.getElementById("gl-"+a.dataset.gl);if(!dt)return;
+  dt.scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"});
+  dt.classList.add("flash");setTimeout(function(){dt.classList.remove("flash")},1600);
+}
+document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest(".gl");if(a){e.preventDefault();e.stopPropagation();goGloss(a)}},true);
+document.addEventListener("keydown",function(e){var a=e.target.closest&&e.target.closest(".gl");if(a&&(e.key==="Enter"||e.key===" ")){e.preventDefault();goGloss(a)}});
+
+/* ---------------- line-number links ---------------- */
+var LN={};CODE.forEach(function(c){LN[c[0]]=1});
+function linkLines(root){
+  var walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:function(n){
+    var p=n.parentElement;if(!p||p.closest("code,a,button,.gl,.ln-ref,.looks,mjx-container,dialog,script,style"))return NodeFilter.FILTER_REJECT;return NodeFilter.FILTER_ACCEPT}});
+  var nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+  var re=/\b(lines?)\s+(\d{3,4})(\s*(?:to|-|–)\s*)?(\d{3,4})?\b/gi;
+  nodes.forEach(function(tn){
+    var text=tn.nodeValue;
+    if(!/\bline/i.test(text))return;
+    var frag=document.createDocumentFragment(),last=0,m,changed=false;
+    re.lastIndex=0;
+    while((m=re.exec(text))){
+      var n1=m[2],sep=m[3],n2=m[4];
+      if(!LN[n1]&&!(n2&&LN[n2]))continue;
+      frag.appendChild(document.createTextNode(text.slice(last,m.index)+m[1]+" "));
+      frag.appendChild(LN[n1]?ref(n1):document.createTextNode(n1));
+      if(sep)frag.appendChild(document.createTextNode(sep));
+      if(n2)frag.appendChild(LN[n2]?ref(n2):document.createTextNode(n2));
+      last=m.index+m[0].length;changed=true;
+    }
+    if(changed){frag.appendChild(document.createTextNode(text.slice(last)));tn.parentNode.replaceChild(frag,tn)}
+  });
+  function ref(n){var s=document.createElement("span");s.className="ln-ref";s.setAttribute("role","button");s.tabIndex=0;s.title="Jump to this line";s.dataset.lnGo=n;s.textContent=n;return s}
+}
+document.querySelectorAll(".lede,.callbar p,.hint,.fine,.project p,.dbody .why,.answer,.panel .f p,.panel .note,.panel .kind,.arow .map,.prov p,.ntable td,.sigcap,dl.terms dd").forEach(linkLines);
+function goLine(n){
+  var el=document.querySelector('.ln[data-ln="'+n+'"]');if(!el)return;
+  openSheet(false);
+  el.scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"});
+  el.classList.add("flash");setTimeout(function(){el.classList.remove("flash")},1600);
+}
+document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("[data-ln-go]");if(a){e.preventDefault();e.stopPropagation();goLine(a.dataset.lnGo)}},true);
+document.addEventListener("keydown",function(e){var a=e.target.closest&&e.target.closest("[data-ln-go]");if(a&&(e.key==="Enter"||e.key===" ")){e.preventDefault();goLine(a.dataset.lnGo)}});
+
+/* ---------------- go ---------------- */
+refreshDynamic();applyLight();paint();
+function typesetAll(){
+  if(window.MathJax&&MathJax.startup&&MathJax.startup.promise){
+    MathJax.startup.promise.then(function(){return MathJax.typesetPromise()}).then(paint).catch(function(e){console.error(e)});
+  } else setTimeout(typesetAll,100);
+}
+typesetAll();
+})();
+</script>
+</body>
+</html>

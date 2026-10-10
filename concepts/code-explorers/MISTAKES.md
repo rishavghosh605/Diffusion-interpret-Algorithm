@@ -85,3 +85,27 @@ A running log of real mistakes caught while building this series, kept so the sa
 **Fix:** Split into two patterns, one per equation number (`Eq\. 16` to `getvariance`, `Eq\. 12` to `ddimupdate`), and added the Eq. 16 citation to the `gl-getvariance` entry itself (it previously described the formula without citing it).
 
 **Now automatic?** No. The cross-reference script confirms every `GLP` id resolves to a real `gl-` entry, but it can't tell whether that entry is the *right* one for the text matched — that's still a reading check, and it's why a fix to one mistake needs the same scrutiny as new content.
+
+---
+
+### A duplicated MathJax config script, overwriting the library after it loaded
+
+**What happened:** `cross_attention.html` had `<script>window.MathJax={...}</script>` twice: once in `<head>` (correct, before the MathJax library loads), and a second copy accidentally pasted again right before the page's own data script, after the library had already loaded and augmented `window.MathJax` with `.startup`, `.typesetPromise`, and the rest. The second assignment replaced that augmented object with a plain one. `typesetAll()`'s own guard (`if (window.MathJax && MathJax.startup && MathJax.startup.promise)`) then always failed, so it silently fell into its retry branch (`setTimeout(typesetAll, 100)`) forever: no error, no console warning, just zero rendered math anywhere on the page, confirmed by `document.querySelectorAll("mjx-container").length === 0` after a 3-second wait.
+
+**Why:** Copying the page shell from the previous page and rebuilding the body script from scratch, the MathJax config snippet got pasted a second time near the new script's opening, instead of only existing once in `<head>`. A first-pass screenshot (one token click, one switch click, 300-500ms waits) looked plausible at thumbnail scale; only a full-resolution crop of the math panel, and an explicit `mjxCount` check, showed every equation was still raw LaTeX source text, not rendered.
+
+**Fix:** Deleted the duplicate script block. Added a cheap check to the screenshot pass: after load, `document.querySelectorAll("mjx-container").length` should be a large positive number, not 0; checking this number is far more reliable than eyeballing a downscaled screenshot for whether math "looks" rendered.
+
+**Now automatic?** Partly — worth adding to `VERIFICATION.md`'s screenshot step as an explicit assertion (`mjxCount > 0`), not just "the page as loaded" screenshot, since a total MathJax failure can look fine in a quick glance at a shrunk full-page image.
+
+---
+
+### A glossary reference carried over from the template page it was copied from
+
+**What happened:** `cross_attention.html`'s `ALGO` table (the "Where it sits in the sampling algorithm" section) was copied from `ddim_reverse_step.html`, which had a hardcoded `<span class="gl" data-gl="forward">7</span>` inside one row's `eqref` field, linking to that page's own `gl-forward` glossary entry. `cross_attention.html` has no `gl-forward` entry (its glossary covers different terms), so the link was dead: clicking it would call `goGloss` with an id that resolves to nothing, silently doing nothing.
+
+**Why:** The `ALGO` array's rows are largely boilerplate (Ho et al.'s Algorithm 2 is the same six lines on every page that cites it), so copying it wholesale felt safe. One cell had page-specific markup baked into a data field rather than kept as plain text, and that markup didn't get re-checked against the new page's own glossary.
+
+**Fix:** Replaced the hardcoded span with a plain empty string for that row's `eqref` (this page doesn't cite a specific equation number for the UNet-forward row; the glossary term it would have needed doesn't exist here, and fabricating a new one just to fill the slot wasn't warranted).
+
+**Now automatic?** No new automatic check; already covered in spirit by `VERIFICATION.md` item 4's `data-gl` grep *if* that grep is extended to check inline `data-gl` attributes embedded in JS string literals, not just `GLP` array entries, since this one wasn't caught by the existing cross-reference script (it only checks `GLP`'s own ids, not every `data-gl` attribute that might appear elsewhere in the page's generated HTML). Worth tightening `VERIFICATION.md` item 3 to say so explicitly.
