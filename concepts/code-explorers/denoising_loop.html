@@ -243,6 +243,9 @@ dl.terms dt.flash,dl.terms dt.flash + dd{background:var(--flame-soft)}
 dl.terms dt,dl.terms dd{transition:background .4s}
 .gl{color:inherit;text-decoration:underline dotted var(--muted);text-underline-offset:3px;cursor:pointer}
 .gl:hover{text-decoration-color:var(--flame)}
+.ln-ref{font-family:var(--mono);font-size:.93em;color:inherit;text-decoration:underline dotted var(--muted);text-underline-offset:3px;cursor:pointer}
+.ln-ref:hover{text-decoration-color:var(--flame)}
+.ln.flash{background:var(--flame-soft)}
 dl.terms{display:grid;grid-template-columns:minmax(150px,220px) minmax(0,1fr);gap:0;margin:10px 0 0;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
 dl.terms dt,dl.terms dd{margin:0;padding:10px 14px;border-bottom:1px solid var(--line)}
 dl.terms dt{font:600 13.5px/19px var(--sans)}
@@ -614,7 +617,7 @@ function drawViz(){
 function refreshDynamic(){
   document.querySelectorAll(".panel").forEach(function(p){
     var t=T[p.dataset.id];p.querySelector("[data-looks]").textContent=t.looks();
-    var n=p.querySelector("[data-note]");if(n){n.textContent=typeof t.note==="function"?t.note():t.note;if(typeof GLP!=="undefined")linkTerms(n)}
+    var n=p.querySelector("[data-note]");if(n){n.textContent=typeof t.note==="function"?t.note():t.note;if(typeof GLP!=="undefined")linkTerms(n);linkLines(n)}
   });
   document.getElementById("sigcap").textContent=guide==="on"?"Right now: guidance on, scale 7.5. The batch doubles at line 1037 and the top case of the first row applies.":"Right now: guidance off, scale 1.0. The batch stays single and lines 1053 to 1059 do not run.";
   drawViz();
@@ -876,6 +879,41 @@ function goGloss(a){
 }
 document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest(".gl");if(a){e.preventDefault();e.stopPropagation();goGloss(a)}},true);
 document.addEventListener("keydown",function(e){var a=e.target.closest&&e.target.closest(".gl");if(a&&(e.key==="Enter"||e.key===" ")){e.preventDefault();goGloss(a)}});
+
+/* ---------------- line-number links ---------------- */
+var LN={};CODE.forEach(function(c){LN[c[0]]=1});
+function linkLines(root){
+  var walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:function(n){
+    var p=n.parentElement;if(!p||p.closest("code,a,button,.gl,.ln-ref,.looks,mjx-container,dialog,script,style"))return NodeFilter.FILTER_REJECT;return NodeFilter.FILTER_ACCEPT}});
+  var nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+  var re=/\b(lines?)\s+(\d{3,4})(\s*(?:to|-|–)\s*)?(\d{3,4})?\b/gi;
+  nodes.forEach(function(tn){
+    var text=tn.nodeValue;
+    if(!/\bline/i.test(text))return;
+    var frag=document.createDocumentFragment(),last=0,m,changed=false;
+    re.lastIndex=0;
+    while((m=re.exec(text))){
+      var n1=m[2],sep=m[3],n2=m[4];
+      if(!LN[n1]&&!(n2&&LN[n2]))continue;
+      frag.appendChild(document.createTextNode(text.slice(last,m.index)+m[1]+" "));
+      frag.appendChild(LN[n1]?ref(n1):document.createTextNode(n1));
+      if(sep)frag.appendChild(document.createTextNode(sep));
+      if(n2)frag.appendChild(LN[n2]?ref(n2):document.createTextNode(n2));
+      last=m.index+m[0].length;changed=true;
+    }
+    if(changed){frag.appendChild(document.createTextNode(text.slice(last)));tn.parentNode.replaceChild(frag,tn)}
+  });
+  function ref(n){var s=document.createElement("span");s.className="ln-ref";s.setAttribute("role","button");s.tabIndex=0;s.title="Jump to this line";s.dataset.lnGo=n;s.textContent=n;return s}
+}
+document.querySelectorAll(".lede,.callbar p,.hint,.fine,.project p,.dbody .why,.answer,.panel .f p,.panel .note,.panel .kind,.arow .map,.prov p,.ntable td,.sigcap,dl.terms dd").forEach(linkLines);
+function goLine(n){
+  var el=document.querySelector('.ln[data-ln="'+n+'"]');if(!el)return;
+  openSheet(false);
+  el.scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"});
+  el.classList.add("flash");setTimeout(function(){el.classList.remove("flash")},1600);
+}
+document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("[data-ln-go]");if(a){e.preventDefault();e.stopPropagation();goLine(a.dataset.lnGo)}},true);
+document.addEventListener("keydown",function(e){var a=e.target.closest&&e.target.closest("[data-ln-go]");if(a&&(e.key==="Enter"||e.key===" ")){e.preventDefault();goLine(a.dataset.lnGo)}});
 
 /* ---------------- go ---------------- */
 refreshDynamic();applyLight();paint();
