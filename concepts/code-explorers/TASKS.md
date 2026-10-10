@@ -10,7 +10,9 @@ Route order (the X-Ray's own), done vs. remaining:
 2. ~~Cross-attention~~ — `attention_processor.py` L1141–1162, `AttnProcessor.__call__`'s core (Stage D, the X-Ray's "deepest"; superseded the planned `attention.py` L960–1082 + `attention_processor.py` L1136–1160 range once the actual pinned line numbers were checked). Done: [`cross_attention.html`](cross_attention.html), [live version](https://claude.ai/artifact/TbWNMtDZ7QMh3ZNi7SKzju).
 3. ~~UNet forward (skim)~~ — `unet_2d_condition.py` L979–1235 (Stage C). Done: [`unet_forward.html`](unet_forward.html), [live version](https://claude.ai/artifact/CnNTamggo7MCSHNrmoAAzh).
 4. ~~`encode_prompt`~~ — `pipeline_stable_diffusion.py` L332–512 (Stage A; the actual method body runs through L512, not L500). Done: [`encode_prompt.html`](encode_prompt.html), [live version](https://claude.ai/artifact/1D5aAZmqgfV1NsAxp9aUX6).
-5. Processor registry — `attention.py` L41–96 (Stage D)
+5. ~~Processor registry~~ — `attention.py` L41–96 (Stage D), pinned in full, no skipped branches. Done: [`processor_registry.html`](processor_registry.html), [live version](https://claude.ai/artifact/VQ9xGBsEg23CXrcM119KBB).
+
+All five of Task 1's pages are now built, verified and shipped. Task 2 (the walkthrough repo and GitHub Pages) is next.
 
 ## Task 2 — Turn it into a walkthrough repo, with GitHub Pages
 

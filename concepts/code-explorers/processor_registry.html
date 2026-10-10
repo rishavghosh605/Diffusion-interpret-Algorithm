@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>How every attention layer gets found and swapped</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;1,7..72,400&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+window.MathJax={
+  tex:{packages:{"[+]":["html"]},inlineMath:[["\\(","\\)"]],displayMath:[["\\[","\\]"]]},
+  svg:{fontCache:"global"},
+  options:{enableMenu:false},
+  startup:{typeset:false}
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg-full.js"></script>
+<style>
+:root{
+  --paper:#F4EEE4; --ground:#F4EEE4; --card:#FFFBF5; --zone:rgba(255,251,245,.6);
+  --ink:#2B221C; --ink-soft:#4A3D32; --muted:#6A5A4C; --on-ink:#F6EFE3;
+  --line:rgba(43,34,28,.11); --line-strong:rgba(43,34,28,.22);
+  --flame:#C98A1E; --flame-soft:rgba(201,138,30,.16); --flame-ink:#6B4A08;
+  --code-bg:#FFFBF5; --glow:rgba(255,236,200,.55); --dusk:rgba(224,120,74,0);
+  --shadow-lift:0 14px 30px #3424142e,0 2px 6px #34241414;
+  --serif:"Literata","Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --sans:"Figtree",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#1A1512; --ground:#1A1512; --card:#241D19; --zone:rgba(239,229,214,.035);
+    --ink:#EFE5D6; --ink-soft:#D8CAB7; --muted:#AE9E8B; --on-ink:#1A1512;
+    --line:rgba(239,229,214,.09); --line-strong:rgba(239,229,214,.22);
+    --flame:#E9A23B; --flame-soft:rgba(233,162,59,.18); --flame-ink:#F0C77A;
+    --code-bg:#241D19; --shadow-lift:0 14px 30px #00000073;
+  }
+}
+:root[data-theme="dark"],:root[data-scheme="night"]{
+  --paper:#1A1512; --card:#241D19; --zone:rgba(239,229,214,.035);
+  --ink:#EFE5D6; --ink-soft:#D8CAB7; --muted:#AE9E8B; --on-ink:#1A1512;
+  --line:rgba(239,229,214,.09); --line-strong:rgba(239,229,214,.22);
+  --flame:#E9A23B; --flame-soft:rgba(233,162,59,.18); --flame-ink:#F0C77A;
+  --code-bg:#241D19; --shadow-lift:0 14px 30px #00000073;
+}
+:root[data-scheme="day"]{
+  --paper:#F4EEE4; --card:#FFFBF5; --zone:rgba(255,251,245,.6);
+  --ink:#2B221C; --ink-soft:#4A3D32; --muted:#6A5A4C; --on-ink:#F6EFE3;
+  --line:rgba(43,34,28,.11); --line-strong:rgba(43,34,28,.22);
+  --flame:#C98A1E; --flame-soft:rgba(201,138,30,.16); --flame-ink:#6B4A08;
+  --code-bg:#FFFBF5; --shadow-lift:0 14px 30px #3424142e,0 2px 6px #34241414;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px);background:var(--ground)}
+body{margin:0;color:var(--ink);background:var(--ground);font:15px/1.6 var(--serif);min-height:100vh;position:relative}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;background:var(--light,none);z-index:0}
+.wrap{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:40px 24px 64px}
+a{color:inherit;text-decoration-color:var(--line-strong);text-underline-offset:3px}
+a:hover{text-decoration-color:var(--flame)}
+:focus-visible{outline:2px solid var(--flame);outline-offset:2px;border-radius:4px}
+.sans{font-family:var(--sans)}
+code,.mono{font-family:var(--mono);font-size:.9em}
+
+/* header */
+h1{font:500 42px/1.1 var(--serif);letter-spacing:-.012em;margin:0 0 10px}
+.lede{font-size:17px;line-height:1.6;color:var(--ink-soft);max-width:62ch;margin:0 0 10px}
+.meta{font:500 12.5px/1.5 var(--sans);color:var(--muted);margin:0}
+h2{font:600 14.5px/20px var(--sans);margin:0 0 4px;color:var(--ink)}
+.hint{font:400 13.5px/20px var(--sans);color:var(--muted);margin:0 0 14px;max-width:70ch}
+
+/* stitch divider */
+.stitch{display:block;width:100%;height:10px;margin:44px 0 30px;color:var(--line-strong)}
+
+/* guidance switch */
+.bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;margin:28px 0 14px}
+.switch{display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:var(--zone);border:1px solid var(--line)}
+.switch button{font:500 14px/20px var(--sans);border:0;background:transparent;color:var(--muted);padding:5px 14px;border-radius:999px;cursor:pointer;transition:background .18s,color .18s}
+.switch button[aria-pressed="true"]{background:var(--ink);color:var(--on-ink)}
+.switch-label{font:500 12px/16px var(--sans);color:var(--muted);margin-right:8px}
+
+/* main grid */
+.grid{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(0,1fr);gap:16px;align-items:start}
+.side{display:grid;gap:16px;position:sticky;top:calc(16px + env(safe-area-inset-top,0px))}
+@media (max-width:900px){.grid{grid-template-columns:1fr}.side{position:static}}
+.zone{background:var(--zone);border-radius:16px;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px}
+.zone-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:0 0 10px}
+.zone-h span{font:500 12px/16px var(--sans);color:var(--muted)}
+
+/* code */
+.code{padding:10px 0;font:12.5px/1.75 var(--mono);color:var(--ink);background:var(--code-bg)}
+.ln{display:grid;grid-template-columns:44px minmax(0,1fr);padding-right:12px;transition:background .18s}
+.ln .n{color:var(--muted);text-align:right;padding-right:14px;user-select:none;opacity:.8}
+.ln .t{white-space:pre-wrap;word-break:break-word}
+.ln.lit{background:var(--flame-soft)}
+.kw{color:var(--muted);font-weight:600}
+.str,.com{color:var(--muted)}
+.com{font-style:italic}
+.tok{cursor:pointer;border-radius:4px;padding:0 1px;background-image:linear-gradient(currentColor,currentColor);background-size:100% 1px;background-repeat:no-repeat;background-position:0 100%;transition:background-color .15s,color .15s}
+.tok.eng{background-image:linear-gradient(var(--line-strong),var(--line-strong))}
+.tok.on{background-color:var(--flame-soft);color:var(--flame-ink);background-image:none}
+.tok.pin{background-color:var(--flame-soft);color:var(--flame-ink);background-image:none;box-shadow:inset 0 -2px 0 var(--flame)}
+
+/* math rows */
+.mrows{padding:6px 14px}
+.mrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:8px 6px;border-radius:8px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .18s}
+.mrow:last-child{border-bottom:0}
+.mrow.lit{background:var(--flame-soft)}
+.mrow .where{font:500 12px/16px var(--sans);color:var(--muted);white-space:nowrap}
+.mrow .eq{overflow-x:auto;overflow-y:hidden}
+.sigcap{font:400 13.5px/20px var(--sans);color:var(--muted);padding:2px 20px 12px}
+mjx-container{color:var(--ink)}
+mjx-container[display="true"]{margin:.3em 0 !important;text-align:left !important}
+mjx-container [class^="s-"],mjx-container [class*=" s-"]{cursor:pointer}
+mjx-container g.on{fill:var(--flame-ink)}
+mjx-container g.on use,mjx-container g.on path,mjx-container g.on rect{fill:var(--flame-ink);stroke:var(--flame);stroke-width:26px}
+
+/* inspector */
+.insp{padding:16px 18px 18px}
+.insp .panel{display:none}
+.insp .panel.show{display:block}
+.ih{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;margin-bottom:2px}
+.ih .cn{font:600 15px/1.4 var(--mono);color:var(--ink);word-break:break-word}
+.ih .arrow{font:500 13px var(--sans);color:var(--muted)}
+.kind{font:500 12px/16px var(--sans);color:var(--muted);margin:0 0 12px}
+.f{margin-top:12px}
+.f h3{font:600 13px/18px var(--sans);color:var(--muted);margin:0 0 3px}
+.f p{margin:0;font-size:15px;line-height:1.55}
+.looks{font:12.5px/1.6 var(--mono);background:var(--zone);border:1px solid var(--line);border-radius:8px;padding:8px 10px;white-space:pre-wrap}
+.viz{display:flex;gap:12px;align-items:center;margin-top:8px}
+.viz canvas{width:88px;height:88px;image-rendering:pixelated;border-radius:6px;border:1px solid var(--line);flex:none}
+.viz span{font:400 13px/18px var(--sans);color:var(--muted)}
+.note{margin-top:12px;padding:8px 12px;border-radius:8px;background:var(--flame-soft);color:var(--flame-ink);font:400 13.5px/20px var(--sans)}
+.none{font-style:italic;color:var(--muted)}
+
+/* algorithm */
+.algo{padding:6px 0}
+.arow{display:grid;grid-template-columns:28px minmax(0,1.2fr) minmax(0,1fr);gap:4px 14px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line)}
+.arow:last-child{border-bottom:0}
+.arow .k{font:500 12px var(--sans);color:var(--muted)}
+.arow .eq{overflow-x:auto;overflow-y:hidden}
+.arow .map{font:400 13.5px/20px var(--sans);color:var(--ink-soft)}
+.arow.here{background:var(--flame-soft)}
+.arow.here .map{color:var(--flame-ink);font-weight:500}
+@media (max-width:640px){.arow{grid-template-columns:24px minmax(0,1fr)}.arow .map{grid-column:2}}
+.fine{font:400 13.5px/20px var(--sans);color:var(--muted);margin:12px 0 0;max-width:72ch}
+
+/* derivations */
+details{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:10px}
+summary{list-style:none;cursor:pointer;padding:14px 18px;display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:baseline}
+summary::-webkit-details-marker{display:none}
+summary .num{font:500 20px/1 var(--serif);color:var(--flame-ink)}
+summary .q{font:500 17px/1.45 var(--serif)}
+summary .open{font:500 12px/16px var(--sans);color:var(--muted);white-space:nowrap}
+details[open] summary .open::after{content:"Close"}
+details:not([open]) summary .open::after{content:"Try it on paper, then open"}
+.dbody{padding:0 18px 18px 56px}
+@media (max-width:640px){.dbody{padding:0 14px 16px}summary{grid-template-columns:24px minmax(0,1fr)}summary .open{grid-column:2}}
+ol.steps{list-style:none;counter-reset:s;padding:0;margin:0}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:26px minmax(0,1fr);gap:0 8px;padding:7px 0;border-bottom:1px dashed var(--line)}
+ol.steps li::before{content:counter(s);font:500 12.5px/2 var(--sans);color:var(--muted)}
+ol.steps .eq{overflow-x:auto;overflow-y:hidden}
+ol.steps .why{grid-column:2;font:400 13.5px/19px var(--sans);color:var(--muted)}
+.answer{margin-top:14px;padding:12px 14px;border-radius:10px;background:var(--zone);border:1px solid var(--line)}
+.answer h3{font:600 13px/18px var(--sans);color:var(--muted);margin:0 0 4px}
+.answer p{margin:0 0 4px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.chip{font:500 12px/16px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:5px 11px;border-radius:999px;cursor:pointer}
+.chip:hover{border-color:var(--flame)}
+
+/* project + whole */
+.project p{max-width:66ch;margin:0 0 10px;font-size:16px}
+.whole{overflow-x:auto;padding:8px 4px}
+.prov{font:400 12.5px/19px var(--sans);color:var(--muted);max-width:80ch}
+.prov p{margin:0 0 6px}
+.closer{display:none}
+@media (max-width:900px){
+  .inspzone{position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));max-height:52vh;overflow:auto;z-index:5;background:var(--card);box-shadow:var(--shadow-lift);border-radius:22px;padding:8px;transform:translateY(115%);transition:transform .25s ease;visibility:hidden}
+  .inspzone.open{transform:none;visibility:visible}
+  .inspzone .card{border:0}
+  .closer{display:block;margin:4px 8px 0 auto;font:500 13px/18px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:4px 12px;border-radius:999px;cursor:pointer}
+  .wrap{padding-bottom:120px}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none !important}}
+/* caller bar */
+.callbar{margin-top:26px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;padding:12px 16px;border-radius:16px;background:var(--zone)}
+.callbar p{margin:0;font-size:15.5px;max-width:64ch}
+.openflow{font:500 14px/20px var(--sans);border:0;background:var(--ink);color:var(--on-ink);padding:7px 16px;border-radius:999px;cursor:pointer}
+.flowbtn{margin-top:8px;font:500 13px/18px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:5px 12px;border-radius:999px;cursor:pointer}
+.flowbtn:hover{border-color:var(--flame)}
+
+/* flowchart dialog */
+dialog.fc{border:0;padding:0;border-radius:22px;background:var(--card);color:var(--ink);box-shadow:var(--shadow-lift);width:min(760px,calc(100vw - 24px));max-height:calc(100vh - 32px);overflow:hidden}
+dialog.fc::backdrop{background:rgba(26,21,18,.42)}
+dialog.fc[open]{animation:fcin .2s ease}
+@keyframes fcin{from{opacity:0;transform:translateY(8px) scale(.99)}to{opacity:1;transform:none}}
+.fc-top{position:sticky;top:0;z-index:3;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:18px 20px 12px;background:var(--card);border-bottom:1px solid var(--line)}
+.fc-top h2{font:500 21px/1.3 var(--serif);margin:0}
+.fc-top p{margin:4px 0 0;font:400 13.5px/20px var(--sans);color:var(--muted)}
+.fc-top button{flex:none;font:500 13px/18px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:5px 12px;border-radius:999px;cursor:pointer}
+.fc-body{overflow:auto;max-height:calc(100vh - 150px);padding:18px 20px 26px}
+.fc-list{position:relative;display:flex;flex-direction:column;align-items:stretch;max-width:560px;margin:0 auto}
+.fnode{position:relative;background:var(--card);border:1px solid var(--line-strong);border-radius:10px;padding:9px 12px;cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%;transition:opacity .2s,border-color .2s,background .2s}
+.fnode:hover{border-color:var(--flame)}
+.fnode .ft{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.fnode .ft b{font:600 14px/19px var(--sans)}
+.fnode .ft span{font:500 11.5px/15px var(--sans);color:var(--muted);white-space:nowrap}
+.fnode .fd{display:block;font:400 14px/1.5 var(--serif);color:var(--ink-soft);margin-top:3px}
+.fnode .fmore{display:none;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);font:400 13px/19px var(--sans);color:var(--ink-soft)}
+.fnode.expanded .fmore{display:block}
+.fnode .fmore b{font-weight:600;color:var(--ink)}
+.fnode .hops{display:none;margin-top:8px}
+.fnode .hop{display:grid;grid-template-columns:22px minmax(0,1fr);gap:2px 8px;align-items:start;padding:5px 0;border-top:1px dashed var(--line)}
+.fnode .hop i{font:600 11.5px/20px var(--sans);font-style:normal;text-align:center;border-radius:999px;background:var(--flame-soft);color:var(--flame-ink);width:20px;height:20px}
+.fnode .hop code{display:block;font:12px/1.5 var(--mono);color:var(--ink);word-break:break-word}
+.fnode .hop span{grid-column:2;font:400 12.5px/17px var(--sans);color:var(--ink-soft)}
+.fc-list.tracing .fnode{opacity:.42}
+.fc-list.tracing .fnode.lit{opacity:1;border-color:var(--flame);background:var(--card)}
+.fc-list.tracing .fnode.lit .hops{display:block}
+.fnode.me{background:var(--flame-soft);border-color:transparent}
+.fc-list.tracing .fnode.me:not(.lit){background:var(--flame-soft)}
+.fconn{align-self:center;width:1.5px;height:20px;background:var(--line-strong);position:relative;flex:none}
+.fconn::after{content:"";position:absolute;left:50%;bottom:-1px;width:7px;height:7px;border-right:1.5px solid var(--line-strong);border-bottom:1.5px solid var(--line-strong);transform:translateX(-50%) rotate(45deg)}
+.fgroup{position:relative;border:1.5px solid var(--line-strong);border-radius:16px;padding:10px 10px 12px;background:var(--zone);display:flex;flex-direction:column}
+.fgroup.me{border-color:var(--flame);background:var(--flame-soft)}
+.fgroup > .fnode.head{margin-bottom:10px}
+.fgroup .kids{display:flex;flex-direction:column;margin:0 0 0 18px}
+.fgroup .kids .fnode{padding:7px 10px}
+.fgroup .kids .fconn{height:14px}
+.loopback{position:absolute;right:-17px;top:62px;bottom:28px;width:14px;border:1.5px dashed var(--muted);border-left:0;border-radius:0 12px 12px 0;opacity:.8}
+.loopback span{position:absolute;right:-6px;top:50%;transform:translate(100%,-50%);font:600 11.5px/15px var(--sans);color:var(--muted);white-space:nowrap}
+.fc-legend{font:400 13px/19px var(--sans);color:var(--muted);max-width:560px;margin:0 auto 14px}
+@media (max-width:640px){.fgroup .kids{margin-left:8px}.loopback{display:none}.fc-body{padding:14px 12px 22px}}
+@media (prefers-reduced-motion: reduce){dialog.fc[open]{animation:none}}
+
+/* glossary + notation */
+.glh{font:600 14.5px/20px var(--sans);margin:22px 0 2px}
+.glsub{font:400 13.5px/20px var(--sans);color:var(--muted);margin:0 0 8px;max-width:70ch}
+dl.terms dt.flash,dl.terms dt.flash + dd{background:var(--flame-soft)}
+dl.terms dt,dl.terms dd{transition:background .4s}
+.gl{color:inherit;text-decoration:underline dotted var(--muted);text-underline-offset:3px;cursor:pointer}
+.gl:hover{text-decoration-color:var(--flame)}
+.ln-ref{font-family:var(--mono);font-size:.93em;color:inherit;text-decoration:underline dotted var(--muted);text-underline-offset:3px;cursor:pointer}
+.ln-ref:hover{text-decoration-color:var(--flame)}
+.ln.flash{background:var(--flame-soft)}
+dl.terms{display:grid;grid-template-columns:minmax(150px,220px) minmax(0,1fr);gap:0;margin:10px 0 0;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+dl.terms dt,dl.terms dd{margin:0;padding:10px 14px;border-bottom:1px solid var(--line)}
+dl.terms dt{font:600 13.5px/19px var(--sans)}
+dl.terms dd{font-size:15px}
+dl.terms dt:last-of-type,dl.terms dd:last-of-type{border-bottom:0}
+@media (max-width:640px){dl.terms{grid-template-columns:1fr}dl.terms dt{border-bottom:0;padding-bottom:0}}
+.ntable{overflow-x:auto}
+.ntable table{border-collapse:collapse;width:100%;min-width:620px;font-size:14.5px}
+.ntable th,.ntable td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--line)}
+.ntable th{font:600 12.5px/17px var(--sans);color:var(--muted)}
+.ntable tr:last-child td{border-bottom:0}
+.ntable td:first-child{font:500 13.5px/19px var(--sans)}
+.eqref{font:500 11.5px/15px var(--sans);color:var(--muted);display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>How every attention layer gets found and swapped</h1>
+  <p class="lede">Nothing on the other four pages in this series tells you where the UNet's attention processors live or how to replace all of them at once. This page is the two methods that do exactly that: walk every submodule, find the ones with attention, and get or set their processor.</p>
+  <p class="meta">Stage D of your <a href="https://claude.ai/artifact/MnpGyn4QjAEuY82bKTgBTF" target="_blank" rel="noopener">SD 1.5 X-Ray</a>, the processor registry. diffusers v0.40.0, <a href="https://github.com/huggingface/diffusers/blob/v0.40.0/src/diffusers/models/attention.py#L41-L96" target="_blank" rel="noopener">attention.py lines 41 to 96</a>, <code>AttentionMixin.attn_processors</code> and <code>AttentionMixin.set_attn_processor</code>. Both pinned in full, no skipped branches: unlike the UNet and encode_prompt pages, every line here runs for every model, SD 1.5 included. Notation follows the survey by Fuest et al. (2024) where it applies; most of this page is tree recursion, not diffusion math.</p>
+</header>
+
+<div class="callbar">
+  <p><code>UNet2DConditionModel</code> (the UNet forward, a separate page) inherits from <code>AttentionMixin</code>, so every UNet instance has these two methods for free. Nothing on this page is called automatically during a normal <code>__call__</code>; it's the mechanism a project would call explicitly, before generation starts, to install a custom attention processor.</p>
+  <button class="openflow" id="openflow">Open the flowchart</button>
+</div>
+
+<div class="bar">
+  <p class="hint" style="margin:0">Hover or tap a name in the code, or a symbol in the math. Its partner lights up on the other side.</p>
+  <div><span class="switch-label">processor argument</span><span class="switch" role="group" aria-label="processor argument">
+    <button data-p="single" aria-pressed="true">One instance (same everywhere)</button>
+    <button data-p="dict" aria-pressed="false">A dict (per layer)</button>
+  </span></div>
+</div>
+
+<div class="grid">
+  <div class="zone">
+    <div class="zone-h"><h2>The code</h2><span>as it is at v0.40.0, pinned in full</span></div>
+    <div class="card code" id="code"></div>
+  </div>
+  <div class="side">
+    <div class="zone">
+      <div class="zone-h"><h2>The same shape, in math</h2><span>tap a row to see its lines</span></div>
+      <div class="card">
+        <div class="mrows" id="mrows"></div>
+        <div class="sigcap" id="sigcap"></div>
+      </div>
+    </div>
+    <div class="zone inspzone" id="inspzone">
+      <button class="closer" id="closer" aria-label="Close details">Close</button>
+      <div class="card insp" id="insp" aria-live="polite"></div>
+    </div>
+  </div>
+</div>
+
+<dialog class="fc" id="fc" aria-labelledby="fctitle">
+  <div class="fc-top"><div><h2 id="fctitle">How these two methods run</h2><p id="fchint"></p></div><button id="fcclose">Close</button></div>
+  <div class="fc-body"><p class="fc-legend" id="fclegend"></p><div class="fc-list" id="fclist"></div></div>
+</dialog>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="9 6 12 6 8 7 11 6" fill="none"/></svg>
+
+<section>
+  <h2>Where it sits in the sampling algorithm</h2>
+  <p class="hint">Ho et al. (2020), Algorithm 2, written in the survey's notation. This page has no row: it changes what row 3 means, before the algorithm ever starts.</p>
+  <div class="card algo" id="algo"></div>
+  <p class="fine">Calling <code>set_attn_processor</code> before sampling starts changes what every <code>self.attn1</code> and <code>self.attn2</code> call inside row 3's \(\epsilon_\theta\) actually computes, for every single iteration of the loop. The algorithm's own notation has no symbol for this: \(\epsilon_\theta\) is treated as one fixed function throughout, but this page is how diffusers lets you swap pieces of it out.</p>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="11 6 8 6 12 7 9 6" fill="none"/></svg>
+
+<section>
+  <h2>Derive it on paper</h2>
+  <p class="hint">The first traces one real dotted name through the recursion. The second is this page's actual point. The third checks what breaks if the two methods' processor counts disagree.</p>
+  <div id="ders"></div>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="8 6 11 7 9 6 12 6" fill="none"/></svg>
+
+<section class="project">
+  <h2>What this means for your project</h2>
+  <p style="margin-top:8px">This is the actual mechanism: <code>pipe.unet.set_attn_processor(your_processor)</code>, called once before generation, swaps the processor every cross- and self-attention call in the whole UNet uses, no per-layer code required. A custom processor's <code>__call__</code> (same shape as <code>AttnProcessor.__call__</code>, the cross-attention page) can read or rewrite <code>hidden_states</code> and <code>encoder_hidden_states</code> at every single attention call, which is a different, much finer-grained intervention point than <code>callback_on_step_end</code> (named on the denoising loop page): that one fires once per sampling step, this one fires once per attention call, dozens of times per step.</p>
+  <p>Passing a <code>dict</code> instead of one instance (the switch above) lets different layers run different processors: one for the UNet's down blocks, another for its up blocks, keyed by the exact dotted names derivation 1 traces.</p>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="10 6 9 7 12 6 8 6" fill="none"/></svg>
+
+<section>
+  <h2>Seen whole</h2>
+  <p class="hint">A UNet instance goes in on the left; a dictionary mapping every attention layer's dotted name to its processor comes out on the right. Setting runs the same walk in reverse.</p>
+  <div class="card whole">\[\underbrace{\text{self}}_{\text{a UNet instance}}\ \xrightarrow{\ \text{named\_children, recursively}\ }\ \underbrace{\{\text{"down\_blocks.0....attn1.processor"}:\ \ldots\}}_{\text{processors}}\]</div>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="9 7 12 6 8 6 11 6" fill="none"/></svg>
+
+<section>
+  <h2>Terms on this page</h2>
+  <p class="hint">Each term means exactly one thing. Underlined terms elsewhere on the page link here.</p>
+  <h3 class="glh">Code terms</h3><p class="glsub">Names for places in the code. Each points at exactly one location.</p>
+  <dl class="terms">
+    <dt id="gl-attentionmixin">AttentionMixin</dt><dd>A mixin class, not a model on its own. <code>UNet2DConditionModel</code> (the UNet forward, a separate page) inherits from it, which is how every UNet instance ends up with these two methods without defining them itself.</dd>
+    <dt id="gl-namedchildren">module.named_children()</dt><dd>A PyTorch <code>nn.Module</code> method, not defined on this page: yields each direct submodule once, paired with the name it's stored under. Both recursive functions here call it once per level to walk one step deeper into the tree.</dd>
+    <dt id="gl-getsetprocessor">get_processor / set_processor</dt><dd>Methods defined on <code>Attention</code> itself (a separate file, not this page): <code>hasattr(module, "get_processor")</code> (line 51) and <code>hasattr(module, "set_processor")</code> (line 86) are how these functions recognize an attention layer among all the UNet's other submodules (resnets, norms, convolutions) without needing an explicit type check.</dd>
+    <dt id="gl-recursion">fn_recursive_add_processors / fn_recursive_attn_processor</dt><dd>Two closures, one per method, each defined inside the function it belongs to and never used outside it. Both follow the same shape: check the current module, recurse into its named_children, repeat. Derivation 1 traces one full path through this recursion.</dd>
+  </dl>
+  <h3 class="glh">Diffusion terms</h3><p class="glsub">The ideas the math is built from.</p>
+  <dl class="terms">
+    <dt id="gl-attentionlayer">Attention layer (as a tree leaf)</dt><dd>Every <code>self.attn1</code> and <code>self.attn2</code> inside every transformer block, inside every down, mid and up block (the UNet forward page), is one leaf this recursion finds. SD 1.5's actual count was not fetched in this environment (network blocked); it depends on how many transformer blocks each cross-attention UNet block contains.</dd>
+  </dl>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="11 6 9 6 12 7 8 6" fill="none"/></svg>
+
+<section>
+  <details>
+    <summary><span class="num">§</span><span class="q">Notation: where this page and the survey differ</span><span class="open"></span></summary>
+    <div class="dbody ntable">
+      <table>
+        <tr><th>Item</th><th>Survey (Fuest et al. 2024)</th><th>This page</th><th>Why it matters</th></tr>
+        <tr><td>\(\epsilon_\theta\)'s internals</td><td>One fixed symbol throughout</td><td>Swappable per attention layer, via set_attn_processor</td><td>The notation has no way to express "the same trained network, but one internal operation replaced"; this page is literally that operation.</td></tr>
+        <tr><td>Scope</td><td>Diffusion sampling math</td><td>PyTorch module tree traversal</td><td>Not diffusion-specific at all: the same two-method pattern (attn_processors / set_attn_processor) would work on any nn.Module tree containing Attention layers.</td></tr>
+      </table>
+    </div>
+  </details>
+</section>
+
+<section class="prov" style="margin-top:28px">
+  <h2>What is checked, and how</h2>
+  <p>Code and line numbers: read from diffusers v0.40.0, downloaded from PyPI in this environment (<code>pip download diffusers==0.40.0</code>, then read with Python's own file reader for exact whitespace) rather than recalled. Every line in the pinned range (41 to 96) is shown; nothing is skipped on this page, unlike the UNet forward and encode_prompt pages.</p>
+  <p>Not run: the exact dotted name a real SD 1.5 UNet would produce (e.g. whether it is literally <code>down_blocks.0.attentions.0.transformer_blocks.0.attn1.processor</code>) was reasoned from the UNet forward page's own structure (down_blocks, attentions, transformer_blocks), not executed against a live model in this environment (Hub-style hosts are blocked by this sandbox's network policy). Flagged as a plausible, structurally-derived example, not a confirmed live output.</p>
+  <p>Papers: Fuest et al. 2024 (Algorithm 2's notation, for the "where it sits" section only). The recursion itself is plain PyTorch, not from any paper.</p>
+</section>
+
+</div>
+
+<script>
+
+(function(){
+"use strict";
+var R=String.raw;
+var pred="single";
+
+/* ---------------- tokens: code name <-> math ---------------- */
+var T={
+ processors:{name:"processors",sym:R`\{\text{name}:\text{proc}\}`,kind:"A dict, built and returned",syms:["s-procs"],rows:["get"],
+  looks:function(){return "{}, growing as the recursion runs; one entry per attention layer found, e.g. {\"down_blocks.0...attn1.processor\": <AttnProcessor instance>}"},
+  math:R`<p>\(\text{processors}\), the dict attn_processors builds and returns: every attention layer's dotted path, mapped to its current processor instance.</p>`,
+  flow:"Initialized empty at line 48. Written into by fn_recursive_add_processors, read back out and returned at line 62. Also read at line 77 by set_attn_processor, just to count entries."},
+ name:{name:"name",sym:R`\text{name}`,kind:"A string, built up through the recursion",syms:["s-name"],rows:["get","set"],
+  looks:function(){return "A dotted path, e.g. \"down_blocks\", then \"down_blocks.0\", then \"down_blocks.0.attentions\", growing one segment per recursion level"},
+  math:"<p class='none'>No math on this page: f\"{name}.{sub_name}\" at lines 55 and 93 is how the path grows one level per recursive call.</p>",
+  flow:"Starts as each top-level child's own name, from self.named_children() at lines 59 and 95. Extended at lines 55 and 93 on each recursive call. Used as the dict key at line 52, and to look up a dict entry at line 90."},
+ module:{name:"module",sym:null,kind:"The submodule being visited, this recursion step",syms:[],rows:["get","set"],
+  looks:function(){return "Any nn.Module: a ResnetBlock2D, a GroupNorm, an Attention instance, anything in the UNet's tree. Most will not have get_processor/set_processor."},
+  math:"<p class='none'>No math on this page: hasattr(module, \"get_processor\") (line 51) or hasattr(module, \"set_processor\") (line 86) is the entire test for whether this module matters to this function.</p>",
+  flow:"Passed as the current node at each recursive call, lines 50 and 85. Checked at lines 51 and 86. Its own named_children() drives the next level, lines 54 and 92."},
+ processor:{name:"processor",sym:R`P`,kind:"The function's argument: one instance, or a dict",syms:["s-proc"],rows:["set"],
+  looks:function(){return pred==="single"?"One AttnProcessor instance, e.g. AttnProcessor2_0(): the same object gets installed on every attention layer found":"A dict, one entry per attention layer's exact dotted name, e.g. {\"down_blocks.0...attn1.processor\": ProcessorA(), \"mid_block...attn.processor\": ProcessorB()}"},
+  math:function(){return pred==="single"?R`<p>\(P\), one processor. Line 87's isinstance check is false, so every call to module.set_processor(processor) at line 88 installs this exact same object.</p>`:R`<p>\(P\), a dict keyed by dotted name. Line 87's isinstance check is true, so line 90 pops out the one entry matching this specific module's own name, name + ".processor".</p>`},
+  flow:"The function's argument. Counted (if a dict) at line 79, compared against count. Read at lines 87 to 90, once per attention layer found."},
+ count:{name:"count",sym:"N",kind:"A number, computed",syms:["s-count"],rows:["set"],
+  looks:function(){return "len(self.attn_processors.keys()): the total number of attention layers in this model, found by literally running the other method first"},
+  math:R`<p>\(N=|\text{processors}|\), computed by calling attn_processors (line 41's own method) and counting its keys. If a dict of processors doesn't have exactly \(N\) entries, line 80 raises before touching anything.</p>`,
+  flow:"Computed at line 77, by calling self.attn_processors (the other method on this page). Compared against len(processor) at line 79, only when processor is a dict."}
+};
+var SYM2TOK={"s-procs":"processors","s-name":"name","s-proc":"processor","s-count":"count"};
+
+/* ---------------- code (pinned in full, no gaps) ---------------- */
+var CODE=[
+ [41,"    <k>def</k> attn_processors(self) -&gt; dict[str, AttentionProcessor]:"],
+ [42,"        <c>r\"\"\"</c>"],
+ [43,"        <c>Returns:</c>"],
+ [44,"            <c>`dict` of attention processors: A dictionary containing all attention processors used in the model with</c>"],
+ [45,"            <c>indexed by its weight name.</c>"],
+ [46,"        <c>\"\"\"</c>"],
+ [47,"        <c># set recursively</c>"],
+ [48,"        [[processors|processors]] = {}"],
+ [49,""],
+ [50,"        <k>def</k> fn_recursive_add_processors([[name|name]]: str, [[module|module]]: torch.nn.Module, processors: dict[str, AttentionProcessor]):"],
+ [51,"            <k>if</k> hasattr(module, <s>\"get_processor\"</s>):"],
+ [52,"                processors[f\"{name}.processor\"] = module.get_processor()"],
+ [53,""],
+ [54,"            <k>for</k> sub_name, child <k>in</k> module.named_children():"],
+ [55,"                fn_recursive_add_processors(f\"{name}.{sub_name}\", child, processors)"],
+ [56,""],
+ [57,"            <k>return</k> processors"],
+ [58,""],
+ [59,"        <k>for</k> name, module <k>in</k> self.named_children():"],
+ [60,"            fn_recursive_add_processors(name, module, processors)"],
+ [61,""],
+ [62,"        <k>return</k> processors"],
+ [63,""],
+ [64,"    <k>def</k> set_attn_processor(self, [[processor|processor]]: AttentionProcessor | dict[str, AttentionProcessor]):"],
+ [65,"        <c>r\"\"\"</c>"],
+ [66,"        <c>Sets the attention processor to use to compute attention.</c>"],
+ [67,""],
+ [68,"        <c>Parameters:</c>"],
+ [69,"            <c>processor (`dict` of `AttentionProcessor` or only `AttentionProcessor`):</c>"],
+ [70,"                <c>The instantiated processor class or a dictionary of processor classes that will be set as the processor</c>"],
+ [71,"                <c>for **all** `Attention` layers.</c>"],
+ [72,""],
+ [73,"                <c>If `processor` is a dict, the key needs to define the path to the corresponding cross attention</c>"],
+ [74,"                <c>processor. This is strongly recommended when setting trainable attention processors.</c>"],
+ [75,""],
+ [76,"        <c>\"\"\"</c>"],
+ [77,"        [[count|count]] = len(self.attn_processors.keys())"],
+ [78,""],
+ [79,"        <k>if</k> isinstance(processor, dict) <k>and</k> len(processor) != count:"],
+ [80,"            <k>raise</k> ValueError("],
+ [81,"                f\"A dict of processors was passed, but the number of processors {len(processor)} does not match the\""],
+ [82,"                f\" number of attention layers: {count}. Please make sure to pass {count} processor classes.\""],
+ [83,"            )"],
+ [84,""],
+ [85,"        <k>def</k> fn_recursive_attn_processor(name: str, module: torch.nn.Module, processor):"],
+ [86,"            <k>if</k> hasattr(module, <s>\"set_processor\"</s>):"],
+ [87,"                <k>if not</k> isinstance(processor, dict):"],
+ [88,"                    module.set_processor(processor)"],
+ [89,"                <k>else</k>:"],
+ [90,"                    module.set_processor(processor.pop(f\"{name}.processor\"))"],
+ [91,""],
+ [92,"            <k>for</k> sub_name, child <k>in</k> module.named_children():"],
+ [93,"                fn_recursive_attn_processor(f\"{name}.{sub_name}\", child, processor)"],
+ [94,""],
+ [95,"        <k>for</k> name, module <k>in</k> self.named_children():"],
+ [96,"            fn_recursive_attn_processor(name, module, processor)"]
+];
+var ENG={module:1};
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+function line(src){
+  var out="",re=/\[\[(\w+)\|(.+?)\]\]|<k>(.*?)<\/k>|<s>(.*?)<\/s>|<c>(.*?)<\/c>/g,last=0,m;
+  while((m=re.exec(src))){
+    out+=src.slice(last,m.index);
+    if(m[1])out+='<span class="tok'+(ENG[m[1]]?" eng":"")+'" tabindex="0" role="button" data-id="'+m[1]+'">'+esc(m[2])+'</span>';
+    else if(m[3]!==undefined)out+='<span class="kw">'+esc(m[3])+'</span>';
+    else if(m[4]!==undefined)out+='<span class="str">'+esc(m[4])+'</span>';
+    else out+='<span class="com">'+esc(m[5])+'</span>';
+    last=re.lastIndex;
+  }
+  return out+src.slice(last);
+}
+document.getElementById("code").innerHTML=CODE.map(function(l){return '<div class="ln" data-ln="'+l[0]+'"><span class="n">'+l[0]+'</span><span class="t">'+line(l[1])+'</span></div>'}).join("");
+
+/* ---------------- math rows ---------------- */
+var ROWS={
+ get:{tex:R`\class{s-procs}{\text{processors}}=\bigcup_{\text{leaf }m}\big\{\class{s-name}{\text{name}(m)}:\ m.\text{get\_processor()}\big\}`,where:"lines 41 to 62",lines:[48,62],tok:"processors"},
+ set:{tex:R`\forall\ \text{leaf }m:\quad m.\text{set\_processor}\big(\class{s-proc}{P}\ \text{or}\ P[\text{name}(m)]\big)`,where:"lines 64 to 96",lines:[77,96],tok:"processor"}
+};
+document.getElementById("mrows").innerHTML=Object.keys(ROWS).map(function(k){return '<div class="mrow" data-row="'+k+'" tabindex="0" role="button"><div class="eq">\\['+ROWS[k].tex+'\\]</div><span class="where">'+ROWS[k].where+'</span></div>'}).join("");
+
+/* ---------------- inspector panels (built once) ---------------- */
+var insp=document.getElementById("insp");
+Object.keys(T).forEach(function(id){
+  var t=T[id],p=document.createElement("div");p.className="panel";p.dataset.id=id;
+  var h='<div class="ih"><span class="cn">'+esc(t.name)+'</span>'+(t.sym?'<span class="arrow">is</span><span>\\('+t.sym+'\\)</span>':'')+'</div>';
+  h+='<p class="kind">'+t.kind+'</p>';
+  h+='<div class="f"><h3>Looks like</h3><div class="looks" data-looks></div></div>';
+  h+='<div class="f"><h3>In the math</h3><div data-math></div></div>';
+  h+='<div class="f"><h3>Comes from, goes to</h3><p>'+esc(t.flow)+'</p><button class="flowbtn" data-flow="'+id+'">Show this on the flowchart</button></div>';
+  if(t.note)h+='<div class="note" data-note></div>';
+  p.innerHTML=h;insp.appendChild(p);
+});
+
+/* ---------------- dynamic text ---------------- */
+function refreshDynamic(){
+  document.querySelectorAll(".panel").forEach(function(p){
+    var t=T[p.dataset.id];p.querySelector("[data-looks]").textContent=t.looks();
+    var mel=p.querySelector("[data-math]");mel.innerHTML=typeof t.math==="function"?t.math():t.math;
+    var n=p.querySelector("[data-note]");if(n){n.textContent=typeof t.note==="function"?t.note():t.note;linkTerms(n);linkLines(n)}
+  });
+  document.getElementById("sigcap").textContent=pred==="single"?"Right now: one processor instance. Line 87's isinstance check is false; every attention layer gets the exact same object, line 88.":"Right now: a dict, one entry per attention layer's exact dotted name. Line 87's isinstance check is true; each layer pops its own entry out, line 90.";
+}
+
+/* ---------------- linking ---------------- */
+var pinned="processors",hover=null;
+function mathEls(cls){return document.querySelectorAll("mjx-container g."+cls)}
+function paint(){
+  var id=hover||pinned,t=T[id];
+  document.querySelectorAll(".tok").forEach(function(e){e.classList.toggle("on",e.dataset.id===id&&id!==pinned);e.classList.toggle("pin",e.dataset.id===pinned)});
+  document.querySelectorAll("mjx-container g.on").forEach(function(g){g.classList.remove("on")});
+  t.syms.forEach(function(c){mathEls(c).forEach(function(g){g.classList.add("on")})});
+  document.querySelectorAll(".mrow").forEach(function(r){r.classList.toggle("lit",t.rows.indexOf(r.dataset.row)>=0)});
+  var lit={};t.rows.forEach(function(k){for(var n=ROWS[k].lines[0];n<=ROWS[k].lines[1];n++)lit[n]=1});
+  document.querySelectorAll(".ln").forEach(function(l){l.classList.toggle("lit",!!lit[l.dataset.ln])});
+  document.querySelectorAll(".panel").forEach(function(p){p.classList.toggle("show",p.dataset.id===id)});
+}
+var narrow=matchMedia("(max-width:900px)");
+function openSheet(on){document.getElementById("inspzone").classList.toggle("open",on&&narrow.matches)}
+function pin(id,fromUser){pinned=id;hover=null;paint();if(fromUser!==false)openSheet(true)}
+document.getElementById("closer").addEventListener("click",function(e){e.stopPropagation();openSheet(false)});
+var code=document.getElementById("code");
+code.addEventListener("mouseover",function(e){var t=e.target.closest(".tok");if(t){hover=t.dataset.id;paint()}});
+code.addEventListener("mouseleave",function(){hover=null;paint()});
+code.addEventListener("click",function(e){var t=e.target.closest(".tok");if(t)pin(t.dataset.id)});
+code.addEventListener("keydown",function(e){var t=e.target.closest(".tok");if(t&&(e.key==="Enter"||e.key===" ")){e.preventDefault();pin(t.dataset.id)}});
+function symOf(el){var g=el.closest&&el.closest("g[class]");while(g){var cls=(g.getAttribute("class")||"").split(/\s+/).filter(function(c){return SYM2TOK[c]});if(cls.length)return SYM2TOK[cls[0]];g=g.parentElement&&g.parentElement.closest("g[class]")}return null}
+document.addEventListener("mouseover",function(e){if(!e.target.closest||!e.target.closest("mjx-container"))return;var id=symOf(e.target);if(id&&id!==hover){hover=id;paint()}});
+document.addEventListener("mouseout",function(e){if(e.target.closest&&e.target.closest("mjx-container")&&hover&&!(e.relatedTarget&&e.relatedTarget.closest&&e.relatedTarget.closest("mjx-container"))){hover=null;paint()}});
+document.addEventListener("click",function(e){
+  if(e.target.closest&&e.target.closest("mjx-container")){var id=symOf(e.target);if(id){pin(id);e.stopPropagation();return}}
+  var r=e.target.closest&&e.target.closest(".mrow");if(r){pin(ROWS[r.dataset.row].tok);return}
+  var c=e.target.closest&&e.target.closest("[data-go]");if(c){pin(c.dataset.go);document.getElementById("code").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"})}
+},true);
+document.getElementById("mrows").addEventListener("keydown",function(e){var r=e.target.closest(".mrow");if(r&&(e.key==="Enter"||e.key===" ")){e.preventDefault();pin(ROWS[r.dataset.row].tok)}});
+document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!fc.open){if(document.getElementById("inspzone").classList.contains("open"))openSheet(false);else pin("processors",false)}});
+document.querySelectorAll(".switch button").forEach(function(b){b.addEventListener("click",function(){
+  pred=b.dataset.p;document.querySelectorAll(".switch button").forEach(function(x){x.setAttribute("aria-pressed",x===b)});refreshDynamic();
+})});
+
+/* ---------------- algorithm ---------------- */
+var ALGO=[
+ [R`x_T\sim\pi(x_T)=\mathcal N(0,I)`,"prepare_latents, a separate page.","p. 2"],
+ [R`\textbf{for } t=T,\dots,1\ \textbf{do}`,"the denoising loop, a separate page, line 1032",""],
+ [R`\epsilon_\theta(x_t,t)`,"the UNet forward (a separate page): what this page can swap pieces of, before the loop starts",""],
+ [R`\mu_\theta(x_t,t)=\tfrac{1}{\sqrt{\alpha_t}}\Big(x_t-\tfrac{1-\alpha_t}{\sqrt{1-\bar\alpha_t}}\,\epsilon_\theta(x_t,t)\Big)`,"not on this page: DDIM's reverse step, a separate page, computes this differently",""],
+ [R`x_{t-1}\sim\mathcal N\big(\mu_\theta(x_t,t),\,\Sigma_\theta\big)`,"not on this page: the reverse step, a separate page",""],
+ [R`\textbf{return } x_0`,"after the denoising loop ends: vae.decode, a separate page",""]
+];
+document.getElementById("algo").innerHTML=ALGO.map(function(a,i){
+  var eqref=a[2];
+  return '<div class="arow"><span class="k">'+(i+1)+'</span><div class="eq">\\('+a[0]+'\\)'+(eqref&&typeof eqref==="string"?'<span class="eqref">'+(eqref.indexOf("survey")===0||eqref.indexOf("p.")===0?eqref:"survey "+eqref)+'</span>':'')+'</div><div class="map">'+a[1]+'</div></div>';
+}).join("");
+
+/* ---------------- derivations ---------------- */
+var DERS=[
+ {q:"Trace one real dotted name through fn_recursive_add_processors, from self down to one attention leaf.",
+  steps:[
+   [R`\text{self.named\_children()}\ \to\ (\text{"down\_blocks"},\ \text{self.down\_blocks})`,"Line 59: the first level, one of the UNet's top-level attributes."],
+   [R`\text{name}=\text{"down\_blocks"}\ \to\ \text{module.named\_children()}\ \to\ (\text{"0"},\ \text{down\_blocks[0]})`,"Line 54: one recursive call deeper, into the first down block."],
+   [R`\text{name}=\text{"down\_blocks.0"}\ \to\ (\text{"attentions"},\ \ldots)\ \to\ (\text{"0"},\ \ldots)\ \to\ (\text{"transformer\_blocks"},\ \ldots)\ \to\ (\text{"0"},\ \ldots)\ \to\ (\text{"attn1"},\ \ldots)`,"Line 55: f\"{name}.{sub_name}\" concatenates one more segment at each of these levels."],
+   [R`\text{name}=\text{"down\_blocks.0.attentions.0.transformer\_blocks.0.attn1"}`,"At this module, hasattr(module, \"get_processor\") is true (line 51): it's an Attention instance, the recursion's actual target."],
+   [R`\text{processors[name + ".processor"]} = \text{module.get\_processor()}`,"Line 52: the dict gets one entry, keyed by this full dotted path plus \".processor\", exactly how diffusers' own saved state dicts name things."]
+  ],
+  answer:R`<p>Each level of the UNet's own attribute structure (down_blocks → one block → attentions → one attention wrapper → transformer_blocks → one block → attn1 or attn2) becomes one more dot-separated segment in the name, built up purely by walking named_children() recursively; nothing about this process is attention-specific until the hasattr check at the very end decides whether to record it.</p>`,
+  chips:[["name","name"],["module","module"]]},
+ {q:"This page's actual point: what does set_attn_processor let a project do that nothing else in this series does?",
+  steps:[
+   [R`\text{cross-attention (a separate page): one function, called many times, same processor every time}`,"That page describes what one call to AttnProcessor.__call__ computes; it has no way to express installing a different one."],
+   [R`\text{callback\_on\_step\_end (denoising loop page): fires once per sampling step}`,"Already named as an intervention point; rewrites latents or prompt_embeds, but only between steps, never inside a single UNet forward call."],
+   [R`\text{set\_attn\_processor(processor): fires once, before sampling, installs processor on every attn1/attn2}`,"This page's own mechanism: after this one call, every attention call for the rest of generation runs through the new processor."],
+   [R`\Rightarrow\ \text{a custom processor's \_\_call\_\_ runs dozens of times per step, once per attention layer, with full access to hidden\_states and encoder\_hidden\_states}`,"Far finer-grained than callback_on_step_end: this is the only mechanism in the whole series that reaches inside a single UNet forward pass, at every attention call specifically."]
+  ],
+  answer:R`<p>set_attn_processor is the only intervention point in this series that operates below the level of one sampling step: it changes what happens inside every attention call, for the rest of generation, with one call made before sampling starts. callback_on_step_end only ever sees the state between steps; a custom attention processor sees it at every single attention computation, dozens of times per step.</p>`,
+  chips:[["processor","processor"],["count","count"]]},
+ {q:"One level down: what happens if a dict passed to set_attn_processor has the wrong number of entries?",
+  steps:[
+   [R`N=\text{len(self.attn\_processors.keys())}`,"Line 77: count, computed by actually running attn_processors (the first method on this page) and counting its keys."],
+   [R`\text{isinstance(processor, dict) and len(processor)}\ne N`,"Line 79: the only check this function performs before doing any real work."],
+   [R`\Rightarrow\ \textbf{raise ValueError}`,"Lines 80 to 83: fails loudly, immediately, before fn_recursive_attn_processor ever runs, so no attention layer gets a partial or inconsistent set of processors."],
+   [R`\text{if the count matched: module.set\_processor(processor.pop(f"{name}.processor"))}`,"Line 90: each matching module pops its own entry out of the dict; by the end every entry should have been consumed exactly once."]
+  ],
+  answer:R`<p>A mismatched dict raises before touching a single attention layer: the count check at line 79 runs first, against the real number of attention layers (computed by calling attn_processors itself), so a project can never end up with some layers holding old processors and others holding new ones from a bad call. It fails all-or-nothing, not partially.</p>`,
+  chips:[["count","count"],["processors","processors"]]}
+];
+document.getElementById("ders").innerHTML=DERS.map(function(d,i){
+  return '<details><summary><span class="num">'+(i+1)+'</span><span class="q">'+d.q+'</span><span class="open"></span></summary><div class="dbody"><ol class="steps">'+
+   d.steps.map(function(s){return '<li><div class="eq">\\['+s[0]+'\\]</div><div class="why">'+s[1]+'</div></li>'}).join("")+
+   '</ol><div class="answer"><h3>'+(i<2?"The answer in one line":"The answer in two lines")+'</h3>'+d.answer+'</div><div class="chips">'+
+   d.chips.map(function(c){return '<button class="chip" data-go="'+c[0]+'">Show '+esc(c[1])+' in the code</button>'}).join("")+'</div></div></details>';
+}).join("");
+
+/* ---------------- flowchart dialog (two linear sequences) ---------------- */
+var FN={
+ IN:{t:"Inputs",l:"called explicitly, not part of __call__",d:"attn_processors takes nothing beyond self; set_attn_processor takes one processor argument.",
+  takes:"nothing yet",gives:"self (a UNet instance), processor (for set_attn_processor only)"},
+ S1:{t:"Step 1: attn_processors walks the tree",l:"lines 48 to 62",d:"Recursively visits every submodule; records any with get_processor into a flat dict, keyed by dotted name.",takes:"self",gives:"processors, a dict"},
+ S2:{t:"Step 2: set_attn_processor counts first",l:"line 77",d:"Calls attn_processors itself, just to count how many attention layers exist.",takes:"self",gives:"count"},
+ S3:{t:"Step 3: validate, if a dict was passed",l:"lines 79 to 83",d:"Raises immediately if a dict's size doesn't match count; nothing is set yet at this point.",takes:"processor, count",gives:"nothing, or an error"},
+ S4:{t:"Step 4: walk the tree again, this time setting",l:"lines 85 to 96",d:"Same recursive shape as step 1, but calls set_processor instead of get_processor, on every matching module.",takes:"self, processor",gives:"every attention layer's processor, replaced"},
+ OUT:{t:"Output",l:"attn_processors returns a dict; set_attn_processor returns nothing",d:"After set_attn_processor, every self.attn1 and self.attn2 call anywhere in the UNet runs the new processor.",takes:"-",gives:"every future attention call uses the new processor"}
+};
+var ORDER=["IN","S1","S2","S3","S4","OUT"];
+var HOPS={
+ processors:[["S1","processors = {}","line 48"],["S1","processors[f\"{name}.processor\"] = module.get_processor()","line 52"],["OUT","return processors","line 62"]],
+ name:[["S1","fn_recursive_add_processors(name, module, processors)","line 60"],["S4","fn_recursive_attn_processor(name, module, processor)","line 96"]],
+ module:[["S1","for name, module in self.named_children()","line 59"],["S4","for name, module in self.named_children()","line 95"]],
+ processor:[["IN","processor","the call"],["S3","if isinstance(processor, dict) and len(processor) != count:","line 79"],["S4","module.set_processor(processor) or processor.pop(...)","lines 88 and 90"]],
+ count:[["S2","count = len(self.attn_processors.keys())","line 77"],["S3","len(processor) != count","line 79"]]
+};
+var fc=document.getElementById("fc"),fclist=document.getElementById("fclist"),flowOpenFor=null;
+function nodeHTML(k,cls){
+  var n=FN[k];
+  return '<button class="fnode'+(cls||"")+'" data-node="'+k+'" aria-expanded="false"><span class="ft"><b>'+esc(n.t)+'</b><span>'+esc(n.l)+'</span></span><span class="fd">'+esc(n.d)+'</span><span class="fmore"><b>Takes</b> '+esc(n.takes)+'<br><b>Gives</b> '+esc(n.gives)+'</span><span class="hops"></span></button>';
+}
+function buildChart(){
+  var h="";
+  ORDER.forEach(function(k,i){
+    if(i)h+='<div class="fconn"></div>';
+    h+=nodeHTML(k);
+  });
+  fclist.innerHTML=h;
+}
+buildChart();
+fclist.addEventListener("click",function(e){var b=e.target.closest(".fnode");if(!b)return;var on=!b.classList.contains("expanded");b.classList.toggle("expanded",on);b.setAttribute("aria-expanded",on)});
+function renderFlow(id){
+  flowOpenFor=id;
+  fclist.querySelectorAll(".fnode").forEach(function(b){b.classList.remove("lit","expanded");b.setAttribute("aria-expanded","false");b.querySelector(".hops").innerHTML=""});
+  if(!id){
+    fclist.classList.remove("tracing");
+    document.getElementById("fctitle").textContent="How these two methods run";
+    document.getElementById("fchint").textContent="Top to bottom, the order either method runs in. Tap any box to see what it takes and what it gives.";
+    document.getElementById("fclegend").textContent="This chart covers two separate method calls, not one loop; steps 1 and 2 to 4 don't run together.";
+    return;
+  }
+  var name=T[id].name.replace(/ \(.*\)$/,"");
+  fclist.classList.add("tracing");
+  document.getElementById("fctitle").textContent="Where "+name+" travels";
+  document.getElementById("fchint").textContent="The lit boxes are the steps it passes through. Numbers give the order.";
+  document.getElementById("fclegend").textContent="Faded boxes do not touch it. Tap any box to see what it takes and what it gives.";
+  (HOPS[id]||[]).forEach(function(hp,i){
+    var b=fclist.querySelector('[data-node="'+hp[0]+'"]');if(!b)return;
+    b.classList.add("lit");
+    b.querySelector(".hops").insertAdjacentHTML("beforeend",'<span class="hop"><i>'+(i+1)+'</i><code>'+esc(hp[1])+'</code><span>'+esc(hp[2])+'</span></span>');
+  });
+}
+function openFlow(id){
+  openSheet(false);renderFlow(id||null);
+  if(typeof fc.showModal==="function")fc.showModal();else fc.setAttribute("open","");
+  var first=id?fclist.querySelector(".fnode.lit"):null,body=fc.querySelector(".fc-body");
+  body.scrollTop=0;
+  if(first){requestAnimationFrame(function(){body.scrollTop=Math.max(0,first.getBoundingClientRect().top-body.getBoundingClientRect().top-12)})}
+}
+function closeFlow(){if(fc.open){if(typeof fc.close==="function")fc.close();else fc.removeAttribute("open")}flowOpenFor=null}
+document.getElementById("fcclose").addEventListener("click",closeFlow);
+fc.addEventListener("close",function(){flowOpenFor=null});
+fc.addEventListener("click",function(e){if(e.target===fc)closeFlow()});
+document.getElementById("openflow").addEventListener("click",function(){openFlow(null)});
+insp.addEventListener("click",function(e){var b=e.target.closest(".flowbtn");if(b)openFlow(b.dataset.flow)});
+
+/* ---------------- light follows the day ---------------- */
+var root=document.documentElement;
+function applyLight(){
+  var h=new Date().getHours(),tod=h>=5&&h<12?"morning":h>=12&&h<17?"afternoon":h>=17&&h<22?"evening":"night";
+  var forced=root.getAttribute("data-theme"),prefDark=matchMedia("(prefers-color-scheme: dark)").matches;
+  var dark=forced==="dark"||(forced!=="light"&&prefDark);
+  var scheme,ground,light;
+  if(forced==="light"||(!dark&&(tod==="morning"||tod==="afternoon"))){
+    scheme="day";
+    ground=tod==="morning"?"#F6EEE1":"#F4EEE4";
+    light=tod==="morning"?"radial-gradient(1100px 520px at 0% 0%,rgba(255,236,200,.55),transparent 70%)"
+         :tod==="afternoon"?"radial-gradient(1200px 420px at 50% -10%,rgba(255,244,214,.6),transparent 70%)"
+         :"radial-gradient(900px 480px at 50% 110%,rgba(242,154,46,.14),transparent 70%)";
+  } else {
+    scheme="night";
+    if(tod==="night"){ground="#1A1512";light="radial-gradient(900px 460px at 50% 115%,rgba(242,154,46,.12),transparent 70%)";}
+    else{ground="#33241F";light=tod==="evening"?"radial-gradient(800px 520px at 105% 20%,rgba(224,120,74,.16),transparent 70%)":"radial-gradient(900px 460px at 50% 115%,rgba(242,154,46,.10),transparent 70%)";}
+  }
+  root.setAttribute("data-scheme",scheme);
+  root.style.setProperty("--ground",ground);
+  root.style.setProperty("--light",light);
+  if(scheme==="night"&&ground==="#33241F"){root.style.setProperty("--card","#2A1E1A");root.style.setProperty("--code-bg","#2A1E1A")}
+  else{root.style.removeProperty("--card");root.style.removeProperty("--code-bg")}
+}
+new MutationObserver(function(ms){if(ms.some(function(m){return m.attributeName==="data-theme"}))applyLight()}).observe(root,{attributes:true});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",applyLight);
+setInterval(applyLight,5*60*1000);
+
+/* ---------------- glossary links ---------------- */
+var GLP=[[/\bAttentionMixin\b/,"attentionmixin"],[/named_children/,"namedchildren"],[/get_processor|set_processor/,"getsetprocessor"],[/fn_recursive_add_processors|fn_recursive_attn_processor/,"recursion"],[/[Aa]ttention layer/,"attentionlayer"]];
+function linkTerms(root){
+  var used={},walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:function(n){
+    var p=n.parentElement;if(!p||p.closest("code,a,button,.gl,.looks,mjx-container,dialog,script,style"))return NodeFilter.FILTER_REJECT;return NodeFilter.FILTER_ACCEPT}});
+  var nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+  nodes.forEach(function(tn){
+    var parts=tn.nodeValue.split(/(\\\(.*?\\\)|\\\[[\s\S]*?\\\])/),changed=false,frag=document.createDocumentFragment();
+    parts.forEach(function(seg,k){
+      if(k%2===1||!seg){frag.appendChild(document.createTextNode(seg));return}
+      var rest=seg;
+      while(rest){
+        var best=null;
+        GLP.forEach(function(g){if(used[g[1]])return;var m=g[0].exec(rest);if(m&&(!best||m.index<best.m.index))best={m:m,id:g[1]}});
+        if(!best){frag.appendChild(document.createTextNode(rest));break}
+        changed=true;used[best.id]=1;
+        frag.appendChild(document.createTextNode(rest.slice(0,best.m.index)));
+        var a=document.createElement("span");a.className="gl";a.setAttribute("role","button");a.tabIndex=0;a.dataset.gl=best.id;a.title="See this in Terms on this page";a.textContent=best.m[0];frag.appendChild(a);
+        rest=rest.slice(best.m.index+best.m[0].length);
+      }
+    });
+    if(changed)tn.parentNode.replaceChild(frag,tn);
+  });
+}
+document.querySelectorAll(".lede,.callbar p,.hint,.fine,.project p,.dbody .why,.answer,.panel .f p,.panel .note,.panel .kind,.arow .map,.prov p,.ntable td,.sigcap").forEach(function(el){if(!el.closest("section")||!el.closest("section").querySelector("dl.terms"))linkTerms(el)});
+function goGloss(a){
+  openSheet(false);
+  var dt=document.getElementById("gl-"+a.dataset.gl);if(!dt)return;
+  dt.scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"});
+  dt.classList.add("flash");setTimeout(function(){dt.classList.remove("flash")},1600);
+}
+document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest(".gl");if(a){e.preventDefault();e.stopPropagation();goGloss(a)}},true);
+document.addEventListener("keydown",function(e){var a=e.target.closest&&e.target.closest(".gl");if(a&&(e.key==="Enter"||e.key===" ")){e.preventDefault();goGloss(a)}});
+
+/* ---------------- line-number links ---------------- */
+var LN={};CODE.forEach(function(c){if(c[0])LN[c[0]]=1});
+function linkLines(root){
+  var walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:function(n){
+    var p=n.parentElement;if(!p||p.closest("code,a,button,.gl,.ln-ref,.looks,mjx-container,dialog,script,style"))return NodeFilter.FILTER_REJECT;return NodeFilter.FILTER_ACCEPT}});
+  var nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+  var re=/\b(lines?)\s+(\d{2,4})(\s*(?:to|-|–)\s*)?(\d{2,4})?\b/gi;
+  nodes.forEach(function(tn){
+    var text=tn.nodeValue;
+    if(!/\bline/i.test(text))return;
+    var frag=document.createDocumentFragment(),last=0,m,changed=false;
+    re.lastIndex=0;
+    while((m=re.exec(text))){
+      var n1=m[2],sep=m[3],n2=m[4];
+      if(!LN[n1]&&!(n2&&LN[n2]))continue;
+      frag.appendChild(document.createTextNode(text.slice(last,m.index)+m[1]+" "));
+      frag.appendChild(LN[n1]?ref(n1):document.createTextNode(n1));
+      if(sep)frag.appendChild(document.createTextNode(sep));
+      if(n2)frag.appendChild(LN[n2]?ref(n2):document.createTextNode(n2));
+      last=m.index+m[0].length;changed=true;
+    }
+    if(changed){frag.appendChild(document.createTextNode(text.slice(last)));tn.parentNode.replaceChild(frag,tn)}
+  });
+  function ref(n){var s=document.createElement("span");s.className="ln-ref";s.setAttribute("role","button");s.tabIndex=0;s.title="Jump to this line";s.dataset.lnGo=n;s.textContent=n;return s}
+}
+document.querySelectorAll(".lede,.callbar p,.hint,.fine,.project p,.dbody .why,.answer,.panel .f p,.panel .note,.panel .kind,.arow .map,.prov p,.ntable td,.sigcap,dl.terms dd").forEach(linkLines);
+function goLine(n){
+  var el=document.querySelector('.ln[data-ln="'+n+'"]');if(!el)return;
+  openSheet(false);
+  el.scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"});
+  el.classList.add("flash");setTimeout(function(){el.classList.remove("flash")},1600);
+}
+document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("[data-ln-go]");if(a){e.preventDefault();e.stopPropagation();goLine(a.dataset.lnGo)}},true);
+document.addEventListener("keydown",function(e){var a=e.target.closest&&e.target.closest("[data-ln-go]");if(a&&(e.key==="Enter"||e.key===" ")){e.preventDefault();goLine(a.dataset.lnGo)}});
+
+/* ---------------- go ---------------- */
+refreshDynamic();applyLight();paint();
+function typesetAll(){
+  if(window.MathJax&&MathJax.startup&&MathJax.startup.promise){
+    MathJax.startup.promise.then(function(){return MathJax.typesetPromise()}).then(paint).catch(function(e){console.error(e)});
+  } else setTimeout(typesetAll,100);
+}
+typesetAll();
+})();
+</script>
+</body>
+</html>
