@@ -61,3 +61,27 @@ A running log of real mistakes caught while building this series, kept so the sa
 **Fix:** Added a second text-scanning pass, `linkLines`, parallel to the existing glossary auto-linker (`linkTerms`) but matching `/\bline(s)?\s+\d{3,4}(...to...\d{3,4})?\b/i` instead of a fixed term list. Each number is checked against the page's own `CODE` array (`LN`, a set of the line numbers actually shown on this page) before being wrapped, so a reference to a line on a *different* page (like `prepare_latents`' lines 694 to 714) stays plain text instead of becoming a dead link. Clicking a wrapped number calls `goLine(n)`, which scrolls the code pane to that line and briefly flashes it (a new `.ln.flash` CSS class, independent of the existing token-highlight `.lit` class so the two don't fight).
 
 **Now automatic?** Yes — it's part of the page's shared shell (CSS + two functions + one selector list), not page-specific data. Any future page built from this template inherits it for free, the same way the glossary auto-linker already does.
+
+---
+
+### A token wired into the code pane with no inspector entry
+
+**What happened:** On `ddim_reverse_step.html`, the code pane marked `eta` as a clickable token (`[[eta|eta]]` on line 481) but `T` had no `eta` entry. Item 3 of `VERIFICATION.md` (cross-reference every ID) caught it before shipping: clicking that token would have opened an inspector panel for an id that didn't exist.
+
+**Why:** `eta` is a function argument, same category as `use_clipped_model_output`, but it only appears once, inline in an arithmetic line (`std_dev_t = eta * variance ** (0.5)`), not in a `self.config.*` read the way the other arguments are. It read like plain code, not like a name worth its own token, so it didn't get added to `T` when the rest of the function's arguments did.
+
+**Fix:** Added the missing `T.eta` entry (argument, default 0.0, flows into `std_dev_t`) and its `HOPS` entry. The cross-reference script is what caught it, not a reading pass; this is the exact failure mode item 3 exists for.
+
+**Now automatic?** Yes — already `VERIFICATION.md` item 3, run as written. This entry just records a real instance of it firing.
+
+---
+
+### A Song et al. equation citation linking to the wrong glossary entry
+
+**What happened:** While broadening the `GLP` pattern `/Song et al\.? Eq\. 1[26]/` on `ddim_reverse_step.html` to catch bare citations (it missed "Song et al. 2021 Eq. 16" and "Song et al.'s Eq. 12", both present on the page, because of the year and possessive in between), the first fix merged Eq. 12 and Eq. 16 into one pattern pointing at a single glossary id, `ddimupdate`. That's wrong for the Eq. 16 case: Eq. 16 is the variance formula (`self._get_variance`), Eq. 12 is the reverse-step update itself. A reader clicking the Eq. 16 citation would have landed on the wrong glossary entry.
+
+**Why:** The two equation numbers share the same author citation, and widening a regex to catch more text naturally reaches for one pattern instead of two. The original narrow pattern's single destination carried over by default when the pattern was widened, without re-checking that both numbers it now caught actually meant the same thing.
+
+**Fix:** Split into two patterns, one per equation number (`Eq\. 16` to `getvariance`, `Eq\. 12` to `ddimupdate`), and added the Eq. 16 citation to the `gl-getvariance` entry itself (it previously described the formula without citing it).
+
+**Now automatic?** No. The cross-reference script confirms every `GLP` id resolves to a real `gl-` entry, but it can't tell whether that entry is the *right* one for the text matched — that's still a reading check, and it's why a fix to one mistake needs the same scrutiny as new content.

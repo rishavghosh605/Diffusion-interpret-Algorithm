@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>What scheduler.step actually computes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;1,7..72,400&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+window.MathJax={
+  tex:{packages:{"[+]":["html"]},inlineMath:[["\\(","\\)"]],displayMath:[["\\[","\\]"]]},
+  svg:{fontCache:"global"},
+  options:{enableMenu:false},
+  startup:{typeset:false}
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg-full.js"></script>
+<style>
+:root{
+  --paper:#F4EEE4; --ground:#F4EEE4; --card:#FFFBF5; --zone:rgba(255,251,245,.6);
+  --ink:#2B221C; --ink-soft:#4A3D32; --muted:#6A5A4C; --on-ink:#F6EFE3;
+  --line:rgba(43,34,28,.11); --line-strong:rgba(43,34,28,.22);
+  --flame:#C98A1E; --flame-soft:rgba(201,138,30,.16); --flame-ink:#6B4A08;
+  --code-bg:#FFFBF5; --glow:rgba(255,236,200,.55); --dusk:rgba(224,120,74,0);
+  --shadow-lift:0 14px 30px #3424142e,0 2px 6px #34241414;
+  --serif:"Literata","Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --sans:"Figtree",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#1A1512; --ground:#1A1512; --card:#241D19; --zone:rgba(239,229,214,.035);
+    --ink:#EFE5D6; --ink-soft:#D8CAB7; --muted:#AE9E8B; --on-ink:#1A1512;
+    --line:rgba(239,229,214,.09); --line-strong:rgba(239,229,214,.22);
+    --flame:#E9A23B; --flame-soft:rgba(233,162,59,.18); --flame-ink:#F0C77A;
+    --code-bg:#241D19; --shadow-lift:0 14px 30px #00000073;
+  }
+}
+:root[data-theme="dark"],:root[data-scheme="night"]{
+  --paper:#1A1512; --card:#241D19; --zone:rgba(239,229,214,.035);
+  --ink:#EFE5D6; --ink-soft:#D8CAB7; --muted:#AE9E8B; --on-ink:#1A1512;
+  --line:rgba(239,229,214,.09); --line-strong:rgba(239,229,214,.22);
+  --flame:#E9A23B; --flame-soft:rgba(233,162,59,.18); --flame-ink:#F0C77A;
+  --code-bg:#241D19; --shadow-lift:0 14px 30px #00000073;
+}
+:root[data-scheme="day"]{
+  --paper:#F4EEE4; --card:#FFFBF5; --zone:rgba(255,251,245,.6);
+  --ink:#2B221C; --ink-soft:#4A3D32; --muted:#6A5A4C; --on-ink:#F6EFE3;
+  --line:rgba(43,34,28,.11); --line-strong:rgba(43,34,28,.22);
+  --flame:#C98A1E; --flame-soft:rgba(201,138,30,.16); --flame-ink:#6B4A08;
+  --code-bg:#FFFBF5; --shadow-lift:0 14px 30px #3424142e,0 2px 6px #34241414;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px);background:var(--ground)}
+body{margin:0;color:var(--ink);background:var(--ground);font:15px/1.6 var(--serif);min-height:100vh;position:relative}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;background:var(--light,none);z-index:0}
+.wrap{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:40px 24px 64px}
+a{color:inherit;text-decoration-color:var(--line-strong);text-underline-offset:3px}
+a:hover{text-decoration-color:var(--flame)}
+:focus-visible{outline:2px solid var(--flame);outline-offset:2px;border-radius:4px}
+.sans{font-family:var(--sans)}
+code,.mono{font-family:var(--mono);font-size:.9em}
+
+/* header */
+h1{font:500 42px/1.1 var(--serif);letter-spacing:-.012em;margin:0 0 10px}
+.lede{font-size:17px;line-height:1.6;color:var(--ink-soft);max-width:62ch;margin:0 0 10px}
+.meta{font:500 12.5px/1.5 var(--sans);color:var(--muted);margin:0}
+h2{font:600 14.5px/20px var(--sans);margin:0 0 4px;color:var(--ink)}
+.hint{font:400 13.5px/20px var(--sans);color:var(--muted);margin:0 0 14px;max-width:70ch}
+
+/* stitch divider */
+.stitch{display:block;width:100%;height:10px;margin:44px 0 30px;color:var(--line-strong)}
+
+/* guidance switch */
+.bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;margin:28px 0 14px}
+.switch{display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:var(--zone);border:1px solid var(--line)}
+.switch button{font:500 14px/20px var(--sans);border:0;background:transparent;color:var(--muted);padding:5px 14px;border-radius:999px;cursor:pointer;transition:background .18s,color .18s}
+.switch button[aria-pressed="true"]{background:var(--ink);color:var(--on-ink)}
+.switch-label{font:500 12px/16px var(--sans);color:var(--muted);margin-right:8px}
+
+/* main grid */
+.grid{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(0,1fr);gap:16px;align-items:start}
+.side{display:grid;gap:16px;position:sticky;top:calc(16px + env(safe-area-inset-top,0px))}
+@media (max-width:900px){.grid{grid-template-columns:1fr}.side{position:static}}
+.zone{background:var(--zone);border-radius:16px;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px}
+.zone-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:0 0 10px}
+.zone-h span{font:500 12px/16px var(--sans);color:var(--muted)}
+
+/* code */
+.code{padding:10px 0;font:12.5px/1.75 var(--mono);color:var(--ink);background:var(--code-bg)}
+.ln{display:grid;grid-template-columns:44px minmax(0,1fr);padding-right:12px;transition:background .18s}
+.ln .n{color:var(--muted);text-align:right;padding-right:14px;user-select:none;opacity:.8}
+.ln .t{white-space:pre-wrap;word-break:break-word}
+.ln.lit{background:var(--flame-soft)}
+.kw{color:var(--muted);font-weight:600}
+.str,.com{color:var(--muted)}
+.com{font-style:italic}
+.tok{cursor:pointer;border-radius:4px;padding:0 1px;background-image:linear-gradient(currentColor,currentColor);background-size:100% 1px;background-repeat:no-repeat;background-position:0 100%;transition:background-color .15s,color .15s}
+.tok.eng{background-image:linear-gradient(var(--line-strong),var(--line-strong))}
+.tok.on{background-color:var(--flame-soft);color:var(--flame-ink);background-image:none}
+.tok.pin{background-color:var(--flame-soft);color:var(--flame-ink);background-image:none;box-shadow:inset 0 -2px 0 var(--flame)}
+
+/* math rows */
+.mrows{padding:6px 14px}
+.mrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:8px 6px;border-radius:8px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .18s}
+.mrow:last-child{border-bottom:0}
+.mrow.lit{background:var(--flame-soft)}
+.mrow .where{font:500 12px/16px var(--sans);color:var(--muted);white-space:nowrap}
+.mrow .eq{overflow-x:auto;overflow-y:hidden}
+.sigcap{font:400 13.5px/20px var(--sans);color:var(--muted);padding:2px 20px 12px}
+mjx-container{color:var(--ink)}
+mjx-container[display="true"]{margin:.3em 0 !important;text-align:left !important}
+mjx-container [class^="s-"],mjx-container [class*=" s-"]{cursor:pointer}
+mjx-container g.on{fill:var(--flame-ink)}
+mjx-container g.on use,mjx-container g.on path,mjx-container g.on rect{fill:var(--flame-ink);stroke:var(--flame);stroke-width:26px}
+
+/* inspector */
+.insp{padding:16px 18px 18px}
+.insp .panel{display:none}
+.insp .panel.show{display:block}
+.ih{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;margin-bottom:2px}
+.ih .cn{font:600 15px/1.4 var(--mono);color:var(--ink);word-break:break-word}
+.ih .arrow{font:500 13px var(--sans);color:var(--muted)}
+.kind{font:500 12px/16px var(--sans);color:var(--muted);margin:0 0 12px}
+.f{margin-top:12px}
+.f h3{font:600 13px/18px var(--sans);color:var(--muted);margin:0 0 3px}
+.f p{margin:0;font-size:15px;line-height:1.55}
+.looks{font:12.5px/1.6 var(--mono);background:var(--zone);border:1px solid var(--line);border-radius:8px;padding:8px 10px;white-space:pre-wrap}
+.viz{display:flex;gap:12px;align-items:center;margin-top:8px}
+.viz canvas{width:88px;height:88px;image-rendering:pixelated;border-radius:6px;border:1px solid var(--line);flex:none}
+.viz span{font:400 13px/18px var(--sans);color:var(--muted)}
+.note{margin-top:12px;padding:8px 12px;border-radius:8px;background:var(--flame-soft);color:var(--flame-ink);font:400 13.5px/20px var(--sans)}
+.none{font-style:italic;color:var(--muted)}
+
+/* algorithm */
+.algo{padding:6px 0}
+.arow{display:grid;grid-template-columns:28px minmax(0,1.2fr) minmax(0,1fr);gap:4px 14px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line)}
+.arow:last-child{border-bottom:0}
+.arow .k{font:500 12px var(--sans);color:var(--muted)}
+.arow .eq{overflow-x:auto;overflow-y:hidden}
+.arow .map{font:400 13.5px/20px var(--sans);color:var(--ink-soft)}
+.arow.here{background:var(--flame-soft)}
+.arow.here .map{color:var(--flame-ink);font-weight:500}
+@media (max-width:640px){.arow{grid-template-columns:24px minmax(0,1fr)}.arow .map{grid-column:2}}
+.fine{font:400 13.5px/20px var(--sans);color:var(--muted);margin:12px 0 0;max-width:72ch}
+
+/* derivations */
+details{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:10px}
+summary{list-style:none;cursor:pointer;padding:14px 18px;display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:baseline}
+summary::-webkit-details-marker{display:none}
+summary .num{font:500 20px/1 var(--serif);color:var(--flame-ink)}
+summary .q{font:500 17px/1.45 var(--serif)}
+summary .open{font:500 12px/16px var(--sans);color:var(--muted);white-space:nowrap}
+details[open] summary .open::after{content:"Close"}
+details:not([open]) summary .open::after{content:"Try it on paper, then open"}
+.dbody{padding:0 18px 18px 56px}
+@media (max-width:640px){.dbody{padding:0 14px 16px}summary{grid-template-columns:24px minmax(0,1fr)}summary .open{grid-column:2}}
+ol.steps{list-style:none;counter-reset:s;padding:0;margin:0}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:26px minmax(0,1fr);gap:0 8px;padding:7px 0;border-bottom:1px dashed var(--line)}
+ol.steps li::before{content:counter(s);font:500 12.5px/2 var(--sans);color:var(--muted)}
+ol.steps .eq{overflow-x:auto;overflow-y:hidden}
+ol.steps .why{grid-column:2;font:400 13.5px/19px var(--sans);color:var(--muted)}
+.answer{margin-top:14px;padding:12px 14px;border-radius:10px;background:var(--zone);border:1px solid var(--line)}
+.answer h3{font:600 13px/18px var(--sans);color:var(--muted);margin:0 0 4px}
+.answer p{margin:0 0 4px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.chip{font:500 12px/16px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:5px 11px;border-radius:999px;cursor:pointer}
+.chip:hover{border-color:var(--flame)}
+
+/* project + whole */
+.project p{max-width:66ch;margin:0 0 10px;font-size:16px}
+.whole{overflow-x:auto;padding:8px 4px}
+.prov{font:400 12.5px/19px var(--sans);color:var(--muted);max-width:80ch}
+.prov p{margin:0 0 6px}
+.closer{display:none}
+@media (max-width:900px){
+  .inspzone{position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));max-height:52vh;overflow:auto;z-index:5;background:var(--card);box-shadow:var(--shadow-lift);border-radius:22px;padding:8px;transform:translateY(115%);transition:transform .25s ease;visibility:hidden}
+  .inspzone.open{transform:none;visibility:visible}
+  .inspzone .card{border:0}
+  .closer{display:block;margin:4px 8px 0 auto;font:500 13px/18px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:4px 12px;border-radius:999px;cursor:pointer}
+  .wrap{padding-bottom:120px}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none !important}}
+/* caller bar */
+.callbar{margin-top:26px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;padding:12px 16px;border-radius:16px;background:var(--zone)}
+.callbar p{margin:0;font-size:15.5px;max-width:64ch}
+.openflow{font:500 14px/20px var(--sans);border:0;background:var(--ink);color:var(--on-ink);padding:7px 16px;border-radius:999px;cursor:pointer}
+.flowbtn{margin-top:8px;font:500 13px/18px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:5px 12px;border-radius:999px;cursor:pointer}
+.flowbtn:hover{border-color:var(--flame)}
+
+/* flowchart dialog */
+dialog.fc{border:0;padding:0;border-radius:22px;background:var(--card);color:var(--ink);box-shadow:var(--shadow-lift);width:min(760px,calc(100vw - 24px));max-height:calc(100vh - 32px);overflow:hidden}
+dialog.fc::backdrop{background:rgba(26,21,18,.42)}
+dialog.fc[open]{animation:fcin .2s ease}
+@keyframes fcin{from{opacity:0;transform:translateY(8px) scale(.99)}to{opacity:1;transform:none}}
+.fc-top{position:sticky;top:0;z-index:3;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:18px 20px 12px;background:var(--card);border-bottom:1px solid var(--line)}
+.fc-top h2{font:500 21px/1.3 var(--serif);margin:0}
+.fc-top p{margin:4px 0 0;font:400 13.5px/20px var(--sans);color:var(--muted)}
+.fc-top button{flex:none;font:500 13px/18px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:5px 12px;border-radius:999px;cursor:pointer}
+.fc-body{overflow:auto;max-height:calc(100vh - 150px);padding:18px 20px 26px}
+.fc-list{position:relative;display:flex;flex-direction:column;align-items:stretch;max-width:560px;margin:0 auto}
+.fnode{position:relative;background:var(--card);border:1px solid var(--line-strong);border-radius:10px;padding:9px 12px;cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%;transition:opacity .2s,border-color .2s,background .2s}
+.fnode:hover{border-color:var(--flame)}
+.fnode .ft{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.fnode .ft b{font:600 14px/19px var(--sans)}
+.fnode .ft span{font:500 11.5px/15px var(--sans);color:var(--muted);white-space:nowrap}
+.fnode .fd{display:block;font:400 14px/1.5 var(--serif);color:var(--ink-soft);margin-top:3px}
+.fnode .fmore{display:none;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);font:400 13px/19px var(--sans);color:var(--ink-soft)}
+.fnode.expanded .fmore{display:block}
+.fnode .fmore b{font-weight:600;color:var(--ink)}
+.fnode .hops{display:none;margin-top:8px}
+.fnode .hop{display:grid;grid-template-columns:22px minmax(0,1fr);gap:2px 8px;align-items:start;padding:5px 0;border-top:1px dashed var(--line)}
+.fnode .hop i{font:600 11.5px/20px var(--sans);font-style:normal;text-align:center;border-radius:999px;background:var(--flame-soft);color:var(--flame-ink);width:20px;height:20px}
+.fnode .hop code{display:block;font:12px/1.5 var(--mono);color:var(--ink);word-break:break-word}
+.fnode .hop span{grid-column:2;font:400 12.5px/17px var(--sans);color:var(--ink-soft)}
+.fc-list.tracing .fnode{opacity:.42}
+.fc-list.tracing .fnode.lit{opacity:1;border-color:var(--flame);background:var(--card)}
+.fc-list.tracing .fnode.lit .hops{display:block}
+.fnode.me{background:var(--flame-soft);border-color:transparent}
+.fc-list.tracing .fnode.me:not(.lit){background:var(--flame-soft)}
+.fconn{align-self:center;width:1.5px;height:20px;background:var(--line-strong);position:relative;flex:none}
+.fconn::after{content:"";position:absolute;left:50%;bottom:-1px;width:7px;height:7px;border-right:1.5px solid var(--line-strong);border-bottom:1.5px solid var(--line-strong);transform:translateX(-50%) rotate(45deg)}
+.fgroup{position:relative;border:1.5px solid var(--line-strong);border-radius:16px;padding:10px 10px 12px;background:var(--zone);display:flex;flex-direction:column}
+.fgroup.me{border-color:var(--flame);background:var(--flame-soft)}
+.fgroup > .fnode.head{margin-bottom:10px}
+.fgroup .kids{display:flex;flex-direction:column;margin:0 0 0 18px}
+.fgroup .kids .fnode{padding:7px 10px}
+.fgroup .kids .fconn{height:14px}
+.loopback{position:absolute;right:-17px;top:62px;bottom:28px;width:14px;border:1.5px dashed var(--muted);border-left:0;border-radius:0 12px 12px 0;opacity:.8}
+.loopback span{position:absolute;right:-6px;top:50%;transform:translate(100%,-50%);font:600 11.5px/15px var(--sans);color:var(--muted);white-space:nowrap}
+.fc-legend{font:400 13px/19px var(--sans);color:var(--muted);max-width:560px;margin:0 auto 14px}
+@media (max-width:640px){.fgroup .kids{margin-left:8px}.loopback{display:none}.fc-body{padding:14px 12px 22px}}
+@media (prefers-reduced-motion: reduce){dialog.fc[open]{animation:none}}
+
+/* glossary + notation */
+.glh{font:600 14.5px/20px var(--sans);margin:22px 0 2px}
+.glsub{font:400 13.5px/20px var(--sans);color:var(--muted);margin:0 0 8px;max-width:70ch}
+dl.terms dt.flash,dl.terms dt.flash + dd{background:var(--flame-soft)}
+dl.terms dt,dl.terms dd{transition:background .4s}
+.gl{color:inherit;text-decoration:underline dotted var(--muted);text-underline-offset:3px;cursor:pointer}
+.gl:hover{text-decoration-color:var(--flame)}
+.ln-ref{font-family:var(--mono);font-size:.93em;color:inherit;text-decoration:underline dotted var(--muted);text-underline-offset:3px;cursor:pointer}
+.ln-ref:hover{text-decoration-color:var(--flame)}
+.ln.flash{background:var(--flame-soft)}
+dl.terms{display:grid;grid-template-columns:minmax(150px,220px) minmax(0,1fr);gap:0;margin:10px 0 0;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+dl.terms dt,dl.terms dd{margin:0;padding:10px 14px;border-bottom:1px solid var(--line)}
+dl.terms dt{font:600 13.5px/19px var(--sans)}
+dl.terms dd{font-size:15px}
+dl.terms dt:last-of-type,dl.terms dd:last-of-type{border-bottom:0}
+@media (max-width:640px){dl.terms{grid-template-columns:1fr}dl.terms dt{border-bottom:0;padding-bottom:0}}
+.ntable{overflow-x:auto}
+.ntable table{border-collapse:collapse;width:100%;min-width:620px;font-size:14.5px}
+.ntable th,.ntable td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--line)}
+.ntable th{font:600 12.5px/17px var(--sans);color:var(--muted)}
+.ntable tr:last-child td{border-bottom:0}
+.ntable td:first-child{font:500 13.5px/19px var(--sans)}
+.eqref{font:500 11.5px/15px var(--sans);color:var(--muted);display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>What scheduler.step actually computes</h1>
+  <p class="lede"><code>self.scheduler.step(...)</code> turns \(\epsilon_\theta(x_t,t)\) into \(x_{t-1}\). This is DDIM's version of it, with \(\eta=0\): deterministic, no randomness, the case the X-Ray asks you to read first.</p>
+  <p class="meta">Stage B of your <a href="https://claude.ai/artifact/MnpGyn4QjAEuY82bKTgBTF" target="_blank" rel="noopener">SD 1.5 X-Ray</a>, the reverse step. diffusers v0.40.0, <a href="https://github.com/huggingface/diffusers/blob/v0.40.0/src/diffusers/schedulers/scheduling_ddim.py#L433-L491" target="_blank" rel="noopener">scheduling_ddim.py lines 433 to 491</a> (the \(\eta=0\) path; the stochastic \(\eta>0\) branch past line 491 is out of scope here). Notation follows the survey by Fuest et al. (2024), plus DDIM's own paper (Song, Meng and Ermon 2021) for what the survey doesn't cover.</p>
+</header>
+
+<div class="callbar">
+  <p>Called once per iteration by <code>the denoising loop</code> (a separate page), at line 1062: <code>self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]</code>. That page treats this call as one black box; this page opens it.</p>
+  <button class="openflow" id="openflow">Open the flowchart</button>
+</div>
+
+<div class="bar">
+  <p class="hint" style="margin:0">Hover or tap a name in the code, or a symbol in the math. Its partner lights up on the other side.</p>
+  <div><span class="switch-label">Prediction type</span><span class="switch" role="group" aria-label="Prediction type">
+    <button data-p="eps" aria-pressed="true">epsilon, SD 1.5</button>
+    <button data-p="v" aria-pressed="false">v_prediction</button>
+  </span></div>
+</div>
+
+<div class="grid">
+  <div class="zone">
+    <div class="zone-h"><h2>The code</h2><span>as it is at v0.40.0</span></div>
+    <div class="card code" id="code"></div>
+  </div>
+  <div class="side">
+    <div class="zone">
+      <div class="zone-h"><h2>The same lines, in math</h2><span>tap a row to see its lines</span></div>
+      <div class="card">
+        <div class="mrows" id="mrows"></div>
+        <div class="sigcap" id="sigcap"></div>
+      </div>
+    </div>
+    <div class="zone inspzone" id="inspzone">
+      <button class="closer" id="closer" aria-label="Close details">Close</button>
+      <div class="card insp" id="insp" aria-live="polite"></div>
+    </div>
+  </div>
+</div>
+
+<dialog class="fc" id="fc" aria-labelledby="fctitle">
+  <div class="fc-top"><div><h2 id="fctitle">How self.scheduler.step runs</h2><p id="fchint"></p></div><button id="fcclose">Close</button></div>
+  <div class="fc-body"><p class="fc-legend" id="fclegend"></p><div class="fc-list" id="fclist"></div></div>
+</dialog>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="9 6 12 6 8 7 11 6" fill="none"/></svg>
+
+<section>
+  <h2>Where it sits in the sampling algorithm</h2>
+  <p class="hint">Ho et al. (2020), Algorithm 2, written in the survey's notation. DDIM reaches the same final row as DDPM, by a different route.</p>
+  <div class="card algo" id="algo"></div>
+  <p class="fine">DDIM does not compute \(\mu_\theta(x_t,t)\) at all; row 4 is not on this page. Instead it predicts \(\hat x_0\) directly (lines 455 to 457) and recombines it deterministically (lines 488 and 491), reaching row 5 by a different equation, Song et al.'s Eq. 12, not the survey's Eq. 6. With \(\eta=0\), \(\Sigma_\theta\) is not sampled from at all: the step is a fixed function of \(\epsilon_\theta\), nothing else.</p>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="11 6 8 6 12 7 9 6" fill="none"/></svg>
+
+<section>
+  <h2>Derive it on paper</h2>
+  <p class="hint">The first two are this stage's checkpoint questions from the X-Ray. The third goes one level down, into the call this page treats as a black box.</p>
+  <div id="ders"></div>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="8 6 11 7 9 6 12 6" fill="none"/></svg>
+
+<section class="project">
+  <h2>What this means for your project</h2>
+  <p style="margin-top:8px">With \(\eta=0\) this function is a fixed, deterministic transform of whatever \(\epsilon_\theta(x_t,t)\) you hand it: same noise prediction in, same \(x_{t-1}\) out, every time. It adds no randomness and makes no decisions of its own.</p>
+  <p>That means it is not a place to intervene. The noise prediction (the UNet forward, a separate page) stays the only point where swapping conditioning or latent representations changes anything; this page is what happens automatically, deterministically, afterward.</p>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="10 6 9 7 12 6 8 6" fill="none"/></svg>
+
+<section>
+  <h2>Seen whole</h2>
+  <p class="hint">A noise prediction on the left, the next latent on the right. This page is the middle term.</p>
+  <div class="card whole">\[\underbrace{\hat\epsilon=\epsilon_\theta(x_t,t)}_{\text{the UNet forward}}\ \xrightarrow{\ \text{invert Eq. 3}\ }\ \underbrace{\hat x_0}_{\texttt{pred\_original\_sample}}\ \xrightarrow{\ +\,\text{direction}(\hat\epsilon)\ }\ \underbrace{x_{t-1}}_{\texttt{prev\_sample}}\]</div>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="9 7 12 6 8 6 11 6" fill="none"/></svg>
+
+<section>
+  <h2>Terms on this page</h2>
+  <p class="hint">Each term means exactly one thing. Underlined terms elsewhere on the page link here.</p>
+  <h3 class="glh">Code terms</h3><p class="glsub">Names for places in the code. Each points at exactly one location.</p>
+  <dl class="terms">
+    <dt id="gl-ddimstep">DDIMScheduler.step</dt><dd>Signature at line 384, body at lines 433 to 548. This page covers the \(\eta=0\) path, lines 433 to 491. Called once per iteration by the denoising loop (a separate page), line 1062.</dd>
+    <dt id="gl-getvariance">self._get_variance</dt><dd>A helper method, not shown on this page. Computes \(\sigma_t(1)^2=\dfrac{1-\bar\alpha_{t-1}}{1-\bar\alpha_t}\Big(1-\dfrac{\bar\alpha_t}{\bar\alpha_{t-1}}\Big)\) from \(\bar\alpha_t\) and \(\bar\alpha_{t-1}\), Song et al. 2021 Eq. 16. This page treats it as a black box; derivation 3 opens it.</dd>
+    <dt id="gl-threshold">self._threshold_sample</dt><dd>An alternative to clamping, used when <code>thresholding=True</code> (off by default for SD 1.5). Not covered on this page; <code>clip_sample</code> (the default path) is.</dd>
+    <dt id="gl-predtype">self.config.prediction_type</dt><dd>Picks which of three formulas (lines 455 to 463) turns <code>model_output</code> into \(\hat x_0\). <code>"epsilon"</code> for SD 1.5; the prediction-type switch above shows <code>"v_prediction"</code>, the other one actually used by some models.</dd>
+  </dl>
+  <h3 class="glh">Diffusion terms</h3><p class="glsub">The ideas the math is built from.</p>
+  <dl class="terms">
+    <dt id="gl-forward">Forward process, survey Eq. 3</dt><dd>The closed form that skips straight from \(x_0\) to any \(x_t\): \(x_t=\sqrt{\bar\alpha_t}\,x_0+\sqrt{1-\bar\alpha_t}\,\epsilon_t\). Inverting this for \(x_0\) is exactly derivation 1 below, and exactly what lines 455 to 457 compute.</dd>
+    <dt id="gl-x0">Predicted \(x_0\), \(\hat x_0\)</dt><dd>The network's one-shot guess at the clean image, computed from \(x_t\) and \(\hat\epsilon\) without taking any reverse steps. Code name <code>pred_original_sample</code>. Clipped to \([-1,1]\) by default (<code>clip_sample=True</code>) before being used further.</dd>
+    <dt id="gl-ddimupdate">DDIM's reverse step, Song et al. 2021, Eq. 12</dt><dd>\(x_{t-1}=\sqrt{\bar\alpha_{t-1}}\,\hat x_0+\sqrt{1-\bar\alpha_{t-1}-\sigma_t^2}\,\hat\epsilon+\sigma_t\,z\), \(z\sim\mathcal N(0,I)\). Lines 488 and 491 compute the \(\eta=0\) case, where \(\sigma_t=0\) and the \(\sigma_t z\) term drops out entirely: no \(z\) is ever drawn. Not in the survey, which only states Ho et al.'s DDPM update (Eq. 6); the survey's glossary entry on this page's series notes DDIM and DDPM share the same trained network but differ here.</dd>
+    <dt id="gl-eta">\(\eta\) (eta)</dt><dd>The knob that interpolates between DDIM (\(\eta=0\), deterministic, this page) and DDPM (\(\eta=1\), fully stochastic): <code>std_dev_t = eta * variance ** 0.5</code>, line 481. \(0\) by default in <code>__call__</code>. Derivation 3 shows why \(\eta=1\) exactly recovers DDPM's own reverse variance.</dd>
+    <dt id="gl-vpred">v_prediction, survey Eq. 8</dt><dd>An alternative training target to raw noise: \(v:=\sqrt{\bar\alpha_t}\,\epsilon-\sqrt{1-\bar\alpha_t}\,x_0\) (read from the PDF's text; the survey's printed form uses \(x_t\) in place of \(x_0\), flagged as a likely slip elsewhere in this page's series). SD 1.5 is trained to predict \(\epsilon\), not \(v\); the prediction-type switch above shows what changes in the code if a model were trained the other way.</dd>
+  </dl>
+  <h3 class="glh">Schedulers</h3><p class="glsub">Classes in <code>diffusers/schedulers</code>. Each turns \(\hat\epsilon\) into \(x_{t-1}\) its own way; the trained UNet is the same for all of them.</p>
+  <dl class="terms">
+    <dt id="gl-ddim">DDIM</dt><dd>Denoising Diffusion Implicit Models (Song, Meng and Ermon 2021). This page. A non-Markovian reverse process that reaches the same trained objective as DDPM but allows a deterministic step (\(\eta=0\)) and far fewer sampling steps. Class: <code>DDIMScheduler</code>.</dd>
+    <dt id="gl-ddpm">DDPM</dt><dd>Denoising Diffusion Probabilistic Models (Ho et al. 2020). Computes \(\mu_\theta(x_t,t)\) directly (survey Eq. 6) and always samples with fresh noise; equivalent to this page's DDIM update at \(\eta=1\). Class: <code>DDPMScheduler</code>.</dd>
+    <dt id="gl-pndm">PNDM</dt><dd>Pseudo Numerical methods for Diffusion Models (Liu et al. 2022). SD 1.5's actual default scheduler, not DDIM; reuses earlier \(\hat\epsilon\) values to take better steps. Not read on this page; the X-Ray's route treats DDIM as the clean illustration of the general pattern PNDM refines. Class: <code>PNDMScheduler</code>.</dd>
+  </dl>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="11 6 9 6 12 7 8 6" fill="none"/></svg>
+
+<section>
+  <details>
+    <summary><span class="num">§</span><span class="q">Notation: where this page, the survey and DDIM's own paper differ</span><span class="open"></span></summary>
+    <div class="dbody ntable">
+      <table>
+        <tr><th>Item</th><th>Survey (Fuest et al. 2024)</th><th>This page</th><th>Why it matters</th></tr>
+        <tr><td>Forward closed form</td><td>\(x_t=\sqrt{\bar\alpha_t}x_0+\sqrt{1-\bar\alpha_t}\epsilon_t\), Eq. 3</td><td>Same</td><td>Inverted for \(\hat x_0\) in derivation 1; the survey does not cover DDIM's reverse step itself.</td></tr>
+        <tr><td>Reverse step</td><td>Only states DDPM's, Eq. 6 (\(\mu_\theta\))</td><td>DDIM's, Song et al. 2021 Eq. 12 (\(\hat x_0\) plus a direction term)</td><td>Different derivation (non-Markovian), same trained network. The survey's Eq. 6 is a different scheduler's formula, not this one.</td></tr>
+        <tr><td>Variance \(\sigma_t(\eta)\)</td><td>Not covered</td><td>Song et al. 2021 Eq. 16, computed by <code>self._get_variance</code></td><td>This page's own black box, opened in derivation 3. No survey equation number to cite.</td></tr>
+        <tr><td>v-prediction</td><td>\(v=\sqrt{\bar\alpha_t}\epsilon-\sqrt{1-\bar\alpha_t}x_t\), Eq. 8</td><td>\(v=\sqrt{\bar\alpha_t}\epsilon-\sqrt{1-\bar\alpha_t}x_0\) (Salimans and Ho's original)</td><td>Read from the PDF's text, the survey prints \(x_t\) where Salimans and Ho (and this page's code, line 462 to 463) use \(x_0\); flagged as a likely slip, also noted on this page's series' denoising-loop page.</td></tr>
+      </table>
+    </div>
+  </details>
+</section>
+
+<section class="prov" style="margin-top:28px">
+  <h2>What is checked, and how</h2>
+  <p>Code and line numbers: read from diffusers v0.40.0, downloaded from PyPI in this environment (<code>pip download diffusers==0.40.0</code>, then read with Python's own file reader for exact whitespace) rather than recalled. Confirmed against the X-Ray's own citations: <code>step</code> at line 384, <code>pred_original_sample</code>'s epsilon branch at 456, <code>pred_sample_direction</code> at 488, <code>prev_sample</code> at 491, all exact matches.</p>
+  <p>Worked out from the source but not run: derivation 3's algebraic simplification of <code>_get_variance</code>'s formula, done on paper, not executed as code. <code>self.config.clip_sample</code>'s default (<code>True</code>) and <code>prediction_type</code>'s default (<code>"epsilon"</code>): read from <code>DDIMScheduler.__init__</code>'s signature, lines 194 to 207; SD 1.5's actual scheduler config was not fetched in this environment (arxiv- and Hub-style hosts are blocked by this sandbox's network policy), so treat those two as the class defaults, not a confirmed SD 1.5 override.</p>
+  <p>Papers: Fuest et al. 2024 (notation, forward process), Song, Meng and Ermon 2021 (DDIM, the reverse step and \(\eta\)), Ho et al. 2020 (Algorithm 2, DDPM, the \(\eta=1\) case), Salimans and Ho 2022 (v-prediction).</p>
+</section>
+
+</div>
+
+<script>
+
+(function(){
+"use strict";
+var R=String.raw;
+var pred="eps";
+
+/* ---------------- tokens: code name <-> math ---------------- */
+var T={
+ model_output:{name:"model_output",sym:R`\hat y`,kind:"The function's argument",syms:["s-m"],rows:["x0"],
+  looks:function(){return pred==="eps"?"A torch.Tensor, (1 or 2, 4, 64, 64): the UNet's noise prediction, epsilon-mode":"Same shape, but the UNet's velocity prediction, v-mode (not SD 1.5's default)"},
+  math:function(){return "placeholder"},
+  flow:"The function's first argument, passed in by the denoising loop (a separate page) as noise_pred, line 1062."},
+ timestep:{name:"timestep",sym:"t",kind:"The function's argument",syms:["s-t"],rows:[],
+  looks:function(){return "A 0-d torch.Tensor or int, e.g. 981 on the first iteration"},
+  math:"<p class='none'>No math of its own: it indexes alphas_cumprod, lines 448 and 480.</p>",
+  flow:"Passed in as t, from the denoising loop's own loop variable, line 1062."},
+ prev_timestep:{name:"prev_timestep",sym:R`t_{\text{prev}}`,kind:"A number, computed",syms:["s-tp"],rows:[],
+  looks:function(){return "An int, e.g. 961 when timestep is 981 and there are 50 inference steps (1000 // 50 = 20 apart)"},
+  math:R`<p>\(t_{\text{prev}}:=t-\dfrac{T}{N}\), where \(T=1000\) (num_train_timesteps) and \(N=50\) (num_inference_steps). Not \(t-1\) despite the comment; the 50 inference timesteps are spaced 20 training timesteps apart.</p>`,
+  flow:"Computed at line 445 from timestep. Used to index alphas_cumprod at line 449 and passed to self._get_variance at line 480."},
+ alpha_prod_t:{name:"alpha_prod_t",sym:R`\bar\alpha_t`,kind:"A number, indexed from the schedule",syms:["s-at"],rows:["x0"],
+  looks:function(){return "A scalar, e.g. about 0.0828 at t=981 (SD 1.5's scaled_linear schedule)"},
+  math:R`<p>\(\bar\alpha_t:=\prod_{i=1}^t\alpha_i\), survey Eq. 3's cumulative product, read directly from the precomputed alphas_cumprod table rather than recomputed.</p>`,
+  flow:"Read from self.alphas_cumprod at line 448. Used in the epsilon-branch x̂_0 formula (line 456) and inside self._get_variance."},
+ alpha_prod_t_prev:{name:"alpha_prod_t_prev",sym:R`\bar\alpha_{t-1}`,kind:"A number, indexed from the schedule",syms:["s-atp"],rows:["dir","out"],
+  looks:function(){return "A scalar, e.g. about 0.0995 at t_prev=961; equals self.final_alpha_cumprod (usually 1.0) when t_prev < 0"},
+  math:R`<p>\(\bar\alpha_{t-1}\): the schedule one scheduler-step earlier. At the very last step, \(t_{\text{prev}}<0\), so DDIM substitutes \(\bar\alpha_0:=1\) (no noise at all), which is why self.final_alpha_cumprod exists.</p>`,
+  flow:"Read from self.alphas_cumprod[prev_timestep] at line 449, or self.final_alpha_cumprod at the boundary. Used in the direction term (line 488) and the final combine (line 491)."},
+ beta_prod_t:{name:"beta_prod_t",sym:R`\bar\beta_t`,kind:"A number, page's own symbol",syms:["s-bt"],rows:["x0"],
+  looks:function(){return "A scalar, 1 minus alpha_prod_t, e.g. about 0.9172 at t=981"},
+  math:R`<p>\(\bar\beta_t:=1-\bar\alpha_t\), the total noise variance remaining at t. Not a symbol the survey defines; this page's own shorthand, matching the code's own name.</p>`,
+  flow:"Computed at line 451. Used throughout the x̂_0 formulas, lines 456 to 463."},
+ pred_type:{name:"self.config.prediction_type",sym:null,kind:"A config string that picks the branch",syms:[],rows:[],
+  looks:function(){return pred==="eps"?'"epsilon" (SD 1.5\'s actual default)':'"v_prediction" (shown for contrast; not what SD 1.5 uses)'},
+  math:"<p class='none'>No math of its own; it selects which of three formulas, lines 455 to 463, defines x̂_0 and the recovered noise estimate.</p>",
+  flow:"Read from the scheduler's config, set once when the scheduler is constructed. Checked at lines 455, 458 and 461."},
+ pred_original_sample:{name:"pred_original_sample",sym:R`\hat x_0`,kind:"The network's one-shot guess at x_0",syms:["s-x0"],rows:["x0"],viz:"x0",
+  looks:function(){return pred==="eps"?"(1 or 2, 4, 64, 64): (x_t - sqrt(beta_prod_t) * model_output) / sqrt(alpha_prod_t)":"(1 or 2, 4, 64, 64): sqrt(alpha_prod_t) * x_t - sqrt(beta_prod_t) * model_output"},
+  math:R`<p>\(\hat x_0=\begin{cases}\dfrac{x_t-\sqrt{\bar\beta_t}\,\hat\epsilon}{\sqrt{\bar\alpha_t}}&\text{epsilon (SD 1.5)}\\[6pt]\sqrt{\bar\alpha_t}\,x_t-\sqrt{\bar\beta_t}\,\hat y&\text{v\_prediction}\end{cases}\)</p><p>The epsilon case is survey Eq. 3 inverted for \(x_0\): derivation 1 derives it.</p>`,
+  flow:"Computed at lines 456, 459 or 462, depending on prediction_type. Clamped to [-1, 1] at line 474 by default (clip_sample=True). Feeds the final combine at line 491.",
+  note:"This is the model's guess at the finished image, computed from x_t in one shot, not by taking any further reverse steps."},
+ pred_epsilon:{name:"pred_epsilon",sym:R`\hat\epsilon`,kind:"The noise estimate used by the rest of the step",syms:["s-eps"],rows:["dir"],
+  looks:function(){return pred==="eps"?"Equals model_output directly: the UNet's own noise prediction":"Recovered algebraically from x_t and the v-prediction x̂_0: (x_t - sqrt(alpha_prod_t) * pred_original_sample) / sqrt(beta_prod_t)"},
+  math:R`<p>In epsilon mode this is just model_output, unchanged. In v_prediction mode it is recovered from \(x_t\) and \(\hat x_0\) by inverting Eq. 3 again, the same move as derivation 1.</p>`,
+  flow:"Set at line 457, 460 or 463. Possibly overwritten at line 485 if use_clipped_model_output. Read once, at the direction term, line 488."},
+ clip_cfg:{name:"self.config.thresholding / clip_sample",sym:null,kind:"Config flags, engineering",syms:[],rows:[],
+  looks:function(){return "thresholding=False, clip_sample=True (SD 1.5's actual override not confirmed here; these are the class defaults)"},
+  math:"<p class='none'>No math on this page: clip_sample clamps x̂_0 to [-1, 1] (line 474), a sanity bound, not part of the DDIM derivation itself.</p>",
+  flow:"Read at lines 471 and 473, right after x̂_0 is computed and before it is used further."},
+ get_variance:{name:"self._get_variance",sym:null,kind:"The call this page treats as a black box",syms:[],rows:["sig"],
+  looks:function(){return "A method call, not shown on this page; returns a scalar, e.g. about 0.012 at t=981"},
+  math:R`<p>Computes \(\sigma_t(\eta)^2\) (before multiplying by \(\eta\)), Song et al. 2021 Eq. 16. What it actually does is derivation 3.</p>`,
+  flow:"Called at line 480 with (timestep, prev_timestep). Returns the value stored in variance."},
+ variance:{name:"variance",sym:R`\sigma_t(\eta)^2/\eta^2`,kind:"A number, the result of get_variance",syms:["s-var"],rows:["sig"],
+  looks:function(){return "A scalar, e.g. about 0.012 at t=981 (before multiplying by eta)"},
+  math:R`<p>The variance DDIM would use if \(\eta=1\) (full DDPM-equivalent noise). Only matters once multiplied by \(\eta\), line 481.</p>`,
+  flow:"Written at line 480. Read once, at line 481, to build std_dev_t."},
+ std_dev_t:{name:"std_dev_t",sym:R`\sigma_t(\eta)`,kind:"A number, this step's noise scale",syms:["s-sig"],rows:["sig","dir"],
+  looks:function(){return "0.0 at eta=0.0 (this page's case): no randomness at all"},
+  math:R`<p>\(\sigma_t(\eta):=\eta\sqrt{\sigma_t(1)^2}\). At \(\eta=0\) (this page), \(\sigma_t=0\): the direction term and the final combine both run with zero injected noise.</p>`,
+  flow:"Computed at line 481 from eta and variance. Read at line 488 (direction term) and, when eta>0, in the code past line 491 (out of scope here)."},
+ use_clipped:{name:"use_clipped_model_output",sym:null,kind:"Engineering only, a function argument",syms:[],rows:[],
+  looks:function(){return "False by default; the denoising loop (a separate page) never passes it True"},
+  math:"<p class='none'>No math here. When True, re-derives pred_epsilon from the clipped x̂_0 instead of trusting the UNet's raw output, matching a convention from the Glide codebase.</p>",
+  flow:"Checked at line 483. Off by default, so pred_epsilon keeps its value from lines 457, 460 or 463."},
+ pred_sample_direction:{name:"pred_sample_direction",sym:R`D_t`,kind:"A vector, page's own symbol",syms:["s-dir"],rows:["dir"],
+  looks:function(){return "(1 or 2, 4, 64, 64): the part of epsilon_hat still consistent with reaching x_(t-1) exactly"},
+  math:R`<p>\(D_t:=\sqrt{1-\bar\alpha_{t-1}-\sigma_t(\eta)^2}\;\hat\epsilon\). At \(\eta=0\) this simplifies to \(\sqrt{\bar\beta_{t-1}}\,\hat\epsilon\): the entire remaining noise budget at \(t-1\), pointed in the predicted-noise direction.</p>`,
+  flow:"Computed at line 488 from alpha_prod_t_prev, std_dev_t and pred_epsilon. Read once, at the final combine, line 491."},
+ prev_sample:{name:"prev_sample",sym:"x_{t-1}",kind:"The function's return value",syms:["s-xtm1"],rows:["out"],viz:"xtm1",
+  looks:function(){return "(1 or 2, 4, 64, 64): sqrt(alpha_prod_t_prev) * pred_original_sample + pred_sample_direction"},
+  math:R`<p>\(x_{t-1}=\sqrt{\bar\alpha_{t-1}}\,\hat x_0+D_t\), Song et al. 2021 Eq. 12 at \(\eta=0\) (the \(\sigma_t z\) term drops out). Derivation 2 reads what the two terms mean physically.</p>`,
+  flow:"Computed at line 491. Returned to the denoising loop (a separate page), which stores it back into latents at line 1062, 50 times."},
+ eta:{name:"eta",sym:R`\eta`,kind:"The function's argument",syms:[],rows:["sig"],
+  looks:function(){return "A float, 0.0 by default and never overridden by the denoising loop; this page's case throughout"},
+  math:R`<p>The knob in \(\sigma_t(\eta)=\eta\sqrt{\sigma_t(1)^2}\), line 481. At \(\eta=0\) (here) the step is fully deterministic; at \(\eta=1\) it recovers DDPM's own stochastic reverse step exactly, shown in derivation 3.</p>`,
+  flow:"Passed in as eta=0.0, from the denoising loop's call to self.scheduler.step, line 1062. Read once, at line 481, to scale variance into std_dev_t."}
+};
+T.model_output.math=R`<p>In epsilon mode (SD 1.5's actual default), this is \(\hat\epsilon=\epsilon_\theta(x_t,t)\), the UNet's noise prediction, the same tensor the denoising loop page calls noise_pred. In v_prediction mode it is instead \(\hat v\), survey Eq. 8, a different trained target. The symbol here, \(\hat y\), is deliberately generic to cover both.</p>`;
+var SYM2TOK={"s-t":"timestep","s-tp":"prev_timestep","s-at":"alpha_prod_t","s-atp":"alpha_prod_t_prev","s-bt":"beta_prod_t","s-m":"model_output","s-x0":"pred_original_sample","s-eps":"pred_epsilon","s-var":"variance","s-sig":"std_dev_t","s-dir":"pred_sample_direction","s-xtm1":"prev_sample"};
+
+/* ---------------- code ---------------- */
+var CODE=[
+ [433,"        <c># See formulas (12) and (16) of DDIM paper https://huggingface.co/papers/2010.02502</c>"],
+ [434,"        <c># Ideally, read DDIM paper in-detail understanding</c>"],
+ [435,""],
+ [436,"        <c># Notation (&lt;variable name&gt; -&gt; &lt;name in paper&gt;</c>"],
+ [437,"        <c># - pred_noise_t -&gt; e_theta(x_t, t)</c>"],
+ [438,"        <c># - pred_original_sample -&gt; f_theta(x_t, t) or x_0</c>"],
+ [439,"        <c># - std_dev_t -&gt; sigma_t</c>"],
+ [440,"        <c># - eta -&gt; η</c>"],
+ [441,"        <c># - pred_sample_direction -&gt; \"direction pointing to x_t\"</c>"],
+ [442,"        <c># - pred_prev_sample -&gt; \"x_t-1\"</c>"],
+ [443,""],
+ [444,"        <c># 1. get previous step value (=t-1)</c>"],
+ [445,"        [[prev_timestep|prev_timestep]] = [[timestep|timestep]] - self.config.num_train_timesteps // self.num_inference_steps"],
+ [446,""],
+ [447,"        <c># 2. compute alphas, betas</c>"],
+ [448,"        [[alpha_prod_t|alpha_prod_t]] = self.alphas_cumprod[timestep]"],
+ [449,"        [[alpha_prod_t_prev|alpha_prod_t_prev]] = self.alphas_cumprod[prev_timestep] <k>if</k> prev_timestep &gt;= 0 <k>else</k> self.final_alpha_cumprod"],
+ [450,""],
+ [451,"        [[beta_prod_t|beta_prod_t]] = 1 - alpha_prod_t"],
+ [452,""],
+ [453,"        <c># 3. compute predicted original sample from predicted noise also called</c>"],
+ [454,"        <c># \"predicted x_0\" of formula (12) from https://huggingface.co/papers/2010.02502</c>"],
+ [455,"        <k>if</k> [[pred_type|self.config.prediction_type]] == <s>\"epsilon\"</s>:"],
+ [456,"            [[pred_original_sample|pred_original_sample]] = (sample - beta_prod_t ** (0.5) * [[model_output|model_output]]) / alpha_prod_t ** (0.5)"],
+ [457,"            [[pred_epsilon|pred_epsilon]] = model_output"],
+ [458,"        <k>elif</k> self.config.prediction_type == <s>\"sample\"</s>:"],
+ [459,"            pred_original_sample = model_output"],
+ [460,"            pred_epsilon = (sample - alpha_prod_t ** (0.5) * pred_original_sample) / beta_prod_t ** (0.5)"],
+ [461,"        <k>elif</k> self.config.prediction_type == <s>\"v_prediction\"</s>:"],
+ [462,"            pred_original_sample = (alpha_prod_t**0.5) * sample - (beta_prod_t**0.5) * model_output"],
+ [463,"            pred_epsilon = (alpha_prod_t**0.5) * model_output + (beta_prod_t**0.5) * sample"],
+ [464,"        <k>else</k>:"],
+ [465,"            <k>raise</k> ValueError("],
+ [466,"                <s>f\"prediction_type given as {self.config.prediction_type} must be one of `epsilon`, `sample`, or\"</s>"],
+ [467,"                <s>\" `v_prediction`\"</s>"],
+ [468,"            )"],
+ [469,""],
+ [470,"        <c># 4. Clip or threshold \"predicted x_0\"</c>"],
+ [471,"        <k>if</k> [[clip_cfg|self.config.thresholding]]:"],
+ [472,"            pred_original_sample = self._threshold_sample(pred_original_sample)"],
+ [473,"        <k>elif</k> [[clip_cfg|self.config.clip_sample]]:"],
+ [474,"            pred_original_sample = pred_original_sample.clamp("],
+ [475,"                -self.config.clip_sample_range, self.config.clip_sample_range"],
+ [476,"            )"],
+ [477,""],
+ [478,"        <c># 5. compute variance: \"sigma_t(η)\" -&gt; see formula (16)</c>"],
+ [479,"        <c># σ_t = sqrt((1 − α_t−1)/(1 − α_t)) * sqrt(1 − α_t/α_t−1)</c>"],
+ [480,"        [[variance|variance]] = [[get_variance|self._get_variance]](timestep, prev_timestep)"],
+ [481,"        [[std_dev_t|std_dev_t]] = [[eta|eta]] * variance ** (0.5)"],
+ [482,""],
+ [483,"        <k>if</k> [[use_clipped|use_clipped_model_output]]:"],
+ [484,"            <c># the pred_epsilon is always re-derived from the clipped x_0 in Glide</c>"],
+ [485,"            pred_epsilon = (sample - alpha_prod_t ** (0.5) * pred_original_sample) / beta_prod_t ** (0.5)"],
+ [486,""],
+ [487,"        <c># 6. compute \"direction pointing to x_t\" of formula (12) from https://huggingface.co/papers/2010.02502</c>"],
+ [488,"        [[pred_sample_direction|pred_sample_direction]] = (1 - alpha_prod_t_prev - std_dev_t**2) ** (0.5) * pred_epsilon"],
+ [489,""],
+ [490,"        <c># 7. compute x_t without \"random noise\" of formula (12) from https://huggingface.co/papers/2010.02502</c>"],
+ [491,"        [[prev_sample|prev_sample]] = alpha_prod_t_prev ** (0.5) * pred_original_sample + pred_sample_direction"]
+];
+var ENG={clip_cfg:1,use_clipped:1};
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+function line(src){
+  var out="",re=/\[\[(\w+)\|(.+?)\]\]|<k>(.*?)<\/k>|<s>(.*?)<\/s>|<c>(.*?)<\/c>/g,last=0,m;
+  while((m=re.exec(src))){
+    out+=src.slice(last,m.index);
+    if(m[1])out+='<span class="tok'+(ENG[m[1]]?" eng":"")+'" tabindex="0" role="button" data-id="'+m[1]+'">'+esc(m[2])+'</span>';
+    else if(m[3]!==undefined)out+='<span class="kw">'+esc(m[3])+'</span>';
+    else if(m[4]!==undefined)out+='<span class="str">'+esc(m[4])+'</span>';
+    else out+='<span class="com">'+esc(m[5])+'</span>';
+    last=re.lastIndex;
+  }
+  return out+src.slice(last);
+}
+document.getElementById("code").innerHTML=CODE.map(function(l){return '<div class="ln" data-ln="'+l[0]+'"><span class="n">'+l[0]+'</span><span class="t">'+line(l[1])+'</span></div>'}).join("");
+
+/* ---------------- math rows ---------------- */
+var ROWS={
+ x0:{tex:R`\class{s-x0}{\hat x_0}=\dfrac{\class{s-xt}{x_t}-\sqrt{\class{s-bt}{\bar\beta_t}}\;\class{s-m}{\hat\epsilon}}{\sqrt{\class{s-at}{\bar\alpha_t}}}`,where:"lines 455 to 457, epsilon mode",lines:[455,457],tok:"pred_original_sample"},
+ sig:{tex:R`\class{s-sig}{\sigma_t(\eta)}=\eta\,\sqrt{\class{s-var}{\sigma_t(1)^2}}\ \ \big(=0\text{ at }\eta=0\big)`,where:"lines 480 to 481",lines:[480,481],tok:"std_dev_t"},
+ dir:{tex:R`\class{s-dir}{D_t}=\sqrt{1-\class{s-atp}{\bar\alpha_{t-1}}-\class{s-sig}{\sigma_t(\eta)}^2}\;\class{s-eps}{\hat\epsilon}`,where:"line 488",lines:[488,488],tok:"pred_sample_direction"},
+ out:{tex:R`\class{s-xtm1}{x_{t-1}}=\sqrt{\class{s-atp}{\bar\alpha_{t-1}}}\;\hat x_0+D_t`,where:"line 491, Song et al. Eq. 12 at η=0",lines:[491,491],tok:"prev_sample"}
+};
+document.getElementById("mrows").innerHTML=Object.keys(ROWS).map(function(k){return '<div class="mrow" data-row="'+k+'" tabindex="0" role="button"><div class="eq">\\['+ROWS[k].tex+'\\]</div><span class="where">'+ROWS[k].where+'</span></div>'}).join("");
+
+/* ---------------- inspector panels (built once) ---------------- */
+var insp=document.getElementById("insp");
+Object.keys(T).forEach(function(id){
+  var t=T[id],p=document.createElement("div");p.className="panel";p.dataset.id=id;
+  var h='<div class="ih"><span class="cn">'+esc(t.name)+'</span>'+(t.sym?'<span class="arrow">is</span><span>\\('+t.sym+'\\)</span>':'')+'</div>';
+  h+='<p class="kind">'+t.kind+'</p>';
+  h+='<div class="f"><h3>Looks like</h3><div class="looks" data-looks></div>'+(t.viz?'<div class="viz"><canvas width="64" height="64" data-viz="'+t.viz+'"></canvas><span data-vizcap></span></div>':'')+'</div>';
+  h+='<div class="f"><h3>In the math</h3><div data-math></div></div>';
+  h+='<div class="f"><h3>Comes from, goes to</h3><p>'+esc(t.flow)+'</p><button class="flowbtn" data-flow="'+id+'">Show this on the flowchart</button></div>';
+  if(t.note)h+='<div class="note" data-note></div>';
+  p.innerHTML=h;insp.appendChild(p);
+});
+
+/* ---------------- noise viz ---------------- */
+function rng(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+var noise=new Float32Array(64*64);(function(){var r=rng(455);for(var i=0;i<noise.length;i++){var u=0,v=0;while(!u)u=r();while(!v)v=r();noise[i]=Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}})();
+function hexToRgb(c){var d=document.createElement("div");d.style.color=c;document.body.appendChild(d);var s=getComputedStyle(d).color;d.remove();var m=s.match(/[\d.]+/g);return [+m[0],+m[1],+m[2]]}
+function drawViz(){
+  var ink=hexToRgb(getComputedStyle(document.documentElement).getPropertyValue("--ink").trim()),card=hexToRgb(getComputedStyle(document.documentElement).getPropertyValue("--card").trim());
+  document.querySelectorAll("canvas[data-viz]").forEach(function(cv){
+    var scale=cv.dataset.viz==="x0"?0.6:1,ctx=cv.getContext("2d"),im=ctx.createImageData(64,64);
+    for(var i=0;i<4096;i++){var v=Math.max(-3,Math.min(3,noise[i]*scale)),a=(v+3)/6;
+      im.data[i*4]=card[0]+(ink[0]-card[0])*a;im.data[i*4+1]=card[1]+(ink[1]-card[1])*a;im.data[i*4+2]=card[2]+(ink[2]-card[2])*a;im.data[i*4+3]=255}
+    ctx.putImageData(im,0,0);
+    cv.nextElementSibling.textContent="Channel 0, illustrative only: shape matches, values are not from a real run.";
+  });
+}
+
+/* ---------------- dynamic text ---------------- */
+function refreshDynamic(){
+  document.querySelectorAll(".panel").forEach(function(p){
+    var t=T[p.dataset.id];p.querySelector("[data-looks]").textContent=t.looks();
+    var mel=p.querySelector("[data-math]");mel.innerHTML=typeof t.math==="function"?t.math():t.math;
+    var n=p.querySelector("[data-note]");if(n){n.textContent=typeof t.note==="function"?t.note():t.note;linkTerms(n);linkLines(n)}
+  });
+  document.getElementById("sigcap").textContent=pred==="eps"?"Right now: epsilon mode (SD 1.5's actual default). The top case of the first row applies.":"Right now: v_prediction mode, shown for contrast. The bottom case of the first row applies; model_output means v, not epsilon.";
+  drawViz();
+}
+
+/* ---------------- linking ---------------- */
+var pinned="pred_original_sample",hover=null;
+function mathEls(cls){return document.querySelectorAll("mjx-container g."+cls)}
+function paint(){
+  var id=hover||pinned,t=T[id];
+  document.querySelectorAll(".tok").forEach(function(e){e.classList.toggle("on",e.dataset.id===id&&id!==pinned);e.classList.toggle("pin",e.dataset.id===pinned)});
+  document.querySelectorAll("mjx-container g.on").forEach(function(g){g.classList.remove("on")});
+  t.syms.forEach(function(c){mathEls(c).forEach(function(g){g.classList.add("on")})});
+  document.querySelectorAll(".mrow").forEach(function(r){r.classList.toggle("lit",t.rows.indexOf(r.dataset.row)>=0)});
+  var lit={};t.rows.forEach(function(k){for(var n=ROWS[k].lines[0];n<=ROWS[k].lines[1];n++)lit[n]=1});
+  document.querySelectorAll(".ln").forEach(function(l){l.classList.toggle("lit",!!lit[l.dataset.ln])});
+  document.querySelectorAll(".panel").forEach(function(p){p.classList.toggle("show",p.dataset.id===id)});
+}
+var narrow=matchMedia("(max-width:900px)");
+function openSheet(on){document.getElementById("inspzone").classList.toggle("open",on&&narrow.matches)}
+function pin(id,fromUser){pinned=id;hover=null;paint();if(fromUser!==false)openSheet(true)}
+document.getElementById("closer").addEventListener("click",function(e){e.stopPropagation();openSheet(false)});
+var code=document.getElementById("code");
+code.addEventListener("mouseover",function(e){var t=e.target.closest(".tok");if(t){hover=t.dataset.id;paint()}});
+code.addEventListener("mouseleave",function(){hover=null;paint()});
+code.addEventListener("click",function(e){var t=e.target.closest(".tok");if(t)pin(t.dataset.id)});
+code.addEventListener("keydown",function(e){var t=e.target.closest(".tok");if(t&&(e.key==="Enter"||e.key===" ")){e.preventDefault();pin(t.dataset.id)}});
+function symOf(el){var g=el.closest&&el.closest("g[class]");while(g){var cls=(g.getAttribute("class")||"").split(/\s+/).filter(function(c){return SYM2TOK[c]});if(cls.length)return SYM2TOK[cls[0]];g=g.parentElement&&g.parentElement.closest("g[class]")}return null}
+document.addEventListener("mouseover",function(e){if(!e.target.closest||!e.target.closest("mjx-container"))return;var id=symOf(e.target);if(id&&id!==hover){hover=id;paint()}});
+document.addEventListener("mouseout",function(e){if(e.target.closest&&e.target.closest("mjx-container")&&hover&&!(e.relatedTarget&&e.relatedTarget.closest&&e.relatedTarget.closest("mjx-container"))){hover=null;paint()}});
+document.addEventListener("click",function(e){
+  if(e.target.closest&&e.target.closest("mjx-container")){var id=symOf(e.target);if(id){pin(id);e.stopPropagation();return}}
+  var r=e.target.closest&&e.target.closest(".mrow");if(r){pin(ROWS[r.dataset.row].tok);return}
+  var c=e.target.closest&&e.target.closest("[data-go]");if(c){pin(c.dataset.go);document.getElementById("code").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"})}
+},true);
+document.getElementById("mrows").addEventListener("keydown",function(e){var r=e.target.closest(".mrow");if(r&&(e.key==="Enter"||e.key===" ")){e.preventDefault();pin(ROWS[r.dataset.row].tok)}});
+document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!fc.open){if(document.getElementById("inspzone").classList.contains("open"))openSheet(false);else pin("pred_original_sample",false)}});
+document.querySelectorAll(".switch button").forEach(function(b){b.addEventListener("click",function(){
+  pred=b.dataset.p;document.querySelectorAll(".switch button").forEach(function(x){x.setAttribute("aria-pressed",x===b)});refreshDynamic();
+})});
+
+/* ---------------- algorithm ---------------- */
+var ALGO=[
+ [R`x_T\sim\pi(x_T)=\mathcal N(0,I)`,"prepare_latents, a separate page.","p. 2"],
+ [R`\textbf{for } t=T,\dots,1\ \textbf{do}`,"the denoising loop, a separate page, line 1032",""],
+ [R`\epsilon_\theta(x_t,t)`,"the UNet forward, a separate page",'Eq. <span class="gl" role="button" tabindex="0" data-gl="forward">7</span>'],
+ [R`\mu_\theta(x_t,t)=\tfrac{1}{\sqrt{\alpha_t}}\Big(x_t-\tfrac{1-\alpha_t}{\sqrt{1-\bar\alpha_t}}\,\epsilon_\theta(x_t,t)\Big)`,"not on this page: DDIM does not compute this",'Eq. 6 (DDPM only)'],
+ [R`x_{t-1}\sim\mathcal N\big(\mu_\theta(x_t,t),\,\Sigma_\theta\big)`,"this page: lines 488 and 491, but via DDIM's own formula, not row 4's",'Song et al. Eq. 12'],
+ [R`\textbf{return } x_0`,"after the denoising loop ends: vae.decode, a separate page",""]
+];
+document.getElementById("algo").innerHTML=ALGO.map(function(a,i){
+  var here=(i===4);
+  var eqref=a[2];
+  return '<div class="arow'+(here?" here":"")+'"><span class="k">'+(i+1)+'</span><div class="eq">\\('+a[0]+'\\)'+(eqref&&typeof eqref==="string"?'<span class="eqref">'+(eqref.indexOf("survey")===0||eqref.indexOf("Song")===0||eqref.indexOf("Eq. 6")===0?eqref:"survey "+eqref)+'</span>':'')+'</div><div class="map">'+a[1]+'</div></div>';
+}).join("");
+
+/* ---------------- derivations ---------------- */
+var DERS=[
+ {q:"Derive line 456's formula for x̂_0 by inverting the forward process closed form.",
+  steps:[
+   [R`x_t=\sqrt{\bar\alpha_t}\,x_0+\sqrt{1-\bar\alpha_t}\,\epsilon_t`,"Survey Eq. 3, the forward process in closed form."],
+   [R`x_0=\frac{x_t-\sqrt{1-\bar\alpha_t}\,\epsilon_t}{\sqrt{\bar\alpha_t}}`,"Solve for x_0 algebraically."],
+   [R`\hat x_0=\frac{x_t-\sqrt{\bar\beta_t}\,\hat\epsilon}{\sqrt{\bar\alpha_t}}`,"The true noise ε_t is unknown; substitute the network's guess ε̂ = model_output, and write 1-ᾱ_t as β̄_t."],
+   [R`\hat x_0=(x_t-\beta_t^{1/2}\hat\epsilon)\,/\,\alpha_t^{1/2}`,"Same equation, in the code's own variable names: this is exactly line 456."]
+  ],
+  answer:R`<p>Line 456 is survey Eq. 3 solved for \(x_0\), with \(\epsilon_t\) replaced by the network's prediction. The same inversion appears in the denoising loop page's own derivation 3, reached from a different direction (deriving \(\mu_\theta\) instead of \(\hat x_0\)).</p>`,
+  chips:[["pred_original_sample","pred_original_sample"],["model_output","model_output"]]},
+ {q:"Read line 491. What do its two terms mean physically?",
+  steps:[
+   [R`x_{t-1}=\underbrace{\sqrt{\bar\alpha_{t-1}}\,\hat x_0}_{\text{term 1}}+\underbrace{D_t}_{\text{term 2}}`,"Line 491, written as two parts."],
+   [R`\text{term 1: move } \hat x_0 \text{ to timestep } t-1\text{'s noise scale}`,"Same role as survey Eq. 3's √ᾱ term, now applied to the predicted clean image instead of the true one."],
+   [R`\text{term 2: } D_t=\sqrt{1-\bar\alpha_{t-1}-\sigma_t^2}\,\hat\epsilon`,"The remaining noise budget at t-1, pointed in the same direction ε̂ already predicted."],
+   [R`\eta=0\ \Rightarrow\ \sigma_t=0\ \Rightarrow\ D_t=\sqrt{\bar\beta_{t-1}}\,\hat\epsilon`,"At η=0 this is the entire noise budget, not a partial one: no randomness is held back for later."]
+  ],
+  answer:R`<p>Term 1 places the predicted clean image at timestep \(t-1\)'s signal scale; term 2 adds back exactly the noise that scale expects, using the same \(\hat\epsilon\) rather than a fresh random draw. Together, at \(\eta=0\), the step is a deterministic reparametrization: same \(\hat\epsilon\), same \(x_{t-1}\), every time.</p>`,
+  chips:[["pred_sample_direction","pred_sample_direction"],["prev_sample","prev_sample"]]},
+ {q:"One level down: derive self._get_variance's formula, and check it matches the comment at line 479.",
+  steps:[
+   [R`\bar\beta_{t-1}:=1-\bar\alpha_{t-1},\qquad \bar\beta_t:=1-\bar\alpha_t`,"Both are already defined quantities; _get_variance recomputes them internally rather than reusing this function's own beta_prod_t."],
+   [R`\sigma_t(1)^2=\frac{\bar\beta_{t-1}}{\bar\beta_t}\Big(1-\frac{\bar\alpha_t}{\bar\alpha_{t-1}}\Big)`,"The method's own formula, read from its source."],
+   [R`=\frac{1-\bar\alpha_{t-1}}{1-\bar\alpha_t}\times\Big(1-\frac{\bar\alpha_t}{\bar\alpha_{t-1}}\Big)`,"Expand β̄, matching the comment at line 479 exactly: \"sqrt((1−α_t−1)/(1−α_t)) * sqrt(1−α_t/α_t−1)\", squared."],
+   [R`\eta=1:\ \sigma_t(1)^2=\text{DDPM's own reverse variance}\ \tilde\beta_t`,"At η=1 this is exactly Ho et al.'s posterior variance, which is why η=1 is described as recovering DDPM."]
+  ],
+  answer:R`<p>self._get_variance computes \(\sigma_t(1)^2=\frac{1-\bar\alpha_{t-1}}{1-\bar\alpha_t}\big(1-\frac{\bar\alpha_t}{\bar\alpha_{t-1}}\big)\), matching the formula named in its own comment at line 479 (Song et al. 2021, Eq. 16). At \(\eta=1\) it equals DDPM's reverse variance exactly, which is the precise sense in which \(\eta=1\) "recovers DDPM": same variance, fresh noise drawn every step, not just a qualitative resemblance.</p>`,
+  chips:[["get_variance","self._get_variance"],["std_dev_t","std_dev_t"]]}
+];
+document.getElementById("ders").innerHTML=DERS.map(function(d,i){
+  return '<details><summary><span class="num">'+(i+1)+'</span><span class="q">'+d.q+'</span><span class="open"></span></summary><div class="dbody"><ol class="steps">'+
+   d.steps.map(function(s){return '<li><div class="eq">\\['+s[0]+'\\]</div><div class="why">'+s[1]+'</div></li>'}).join("")+
+   '</ol><div class="answer"><h3>'+(i<2?"The answer in one line":"The answer in two lines")+'</h3>'+d.answer+'</div><div class="chips">'+
+   d.chips.map(function(c){return '<button class="chip" data-go="'+c[0]+'">Show '+esc(c[1])+' in the code</button>'}).join("")+'</div></div></details>';
+}).join("");
+
+/* ---------------- flowchart dialog (this function's own 7 steps, linear) ---------------- */
+var FN={
+ IN:{t:"Inputs",l:"from the denoising loop, line 1062",d:"What self.scheduler.step receives, once per iteration.",
+  takes:"nothing yet",gives:"model_output = ε̂, timestep = t, sample = x_t, eta = 0.0, use_clipped_model_output = False"},
+ S1:{t:"Step 1: previous timestep",l:"line 445",d:"t_prev = t − T/N, the next scheduled timestep down.",takes:"timestep",gives:"prev_timestep"},
+ S2:{t:"Step 2: alphas, betas",l:"lines 448 to 451",d:"Look up ᾱ_t and ᾱ_(t−1) from the precomputed schedule; β̄_t = 1 − ᾱ_t.",takes:"timestep, prev_timestep",gives:"alpha_prod_t, alpha_prod_t_prev, beta_prod_t"},
+ S3:{t:"Step 3: predicted x̂_0",l:"lines 455 to 468",d:"Invert the forward process for x_0, using whichever prediction_type the model was trained with.",takes:"sample, model_output, alpha_prod_t, beta_prod_t",gives:"pred_original_sample, pred_epsilon"},
+ S4:{t:"Step 4: clip x̂_0",l:"lines 471 to 476",d:"Clamp to [-1, 1] by default (clip_sample=True), a sanity bound.",takes:"pred_original_sample",gives:"pred_original_sample, clamped"},
+ S5:{t:"Step 5: variance",l:"lines 480 to 481",d:"self._get_variance (a black box here) gives this step's noise scale; zero at η=0.",takes:"timestep, prev_timestep, eta",gives:"variance, std_dev_t"},
+ S6:{t:"Step 6: direction term",l:"line 488",d:"The remaining noise budget at t−1, pointed along the same ε̂.",takes:"alpha_prod_t_prev, std_dev_t, pred_epsilon",gives:"pred_sample_direction"},
+ S7:{t:"Step 7: combine",l:"line 491",d:"Move x̂_0 to t−1's scale and add the direction term. No randomness at η=0.",takes:"alpha_prod_t_prev, pred_original_sample, pred_sample_direction",gives:"prev_sample"},
+ OUT:{t:"Output",l:"returned to the denoising loop",d:"x_(t−1), overwrites latents at line 1062.",takes:"prev_sample",gives:"the next iteration's x_t"}
+};
+var ORDER=["IN","S1","S2","S3","S4","S5","S6","S7","OUT"];
+var HOPS={
+ model_output:[["IN","model_output=noise_pred","the call, line 1062"],["S3","pred_epsilon = model_output","epsilon mode, line 457"]],
+ timestep:[["IN","timestep=t","the call, line 1062"],["S1","prev_timestep = timestep - ...","line 445"],["S2","self.alphas_cumprod[timestep]","line 448"]],
+ prev_timestep:[["S1","prev_timestep = timestep - self.config.num_train_timesteps // self.num_inference_steps","line 445"],["S2","alpha_prod_t_prev = self.alphas_cumprod[prev_timestep]","line 449"],["S5","self._get_variance(timestep, prev_timestep)","line 480"]],
+ alpha_prod_t:[["S2","alpha_prod_t = self.alphas_cumprod[timestep]","line 448"],["S3","(sample - ...) / alpha_prod_t ** (0.5)","line 456"]],
+ alpha_prod_t_prev:[["S2","alpha_prod_t_prev = ...","line 449"],["S6","(1 - alpha_prod_t_prev - std_dev_t**2) ** (0.5)","line 488"],["S7","alpha_prod_t_prev ** (0.5) * pred_original_sample","line 491"]],
+ beta_prod_t:[["S2","beta_prod_t = 1 - alpha_prod_t","line 451"],["S3","beta_prod_t ** (0.5) * model_output","line 456"]],
+ pred_type:[["IN","self.config.prediction_type (set when the scheduler was built)","class config"],["S3","if self.config.prediction_type == \"epsilon\":","line 455"]],
+ pred_original_sample:[["S3","pred_original_sample = (sample - ...) / alpha_prod_t ** (0.5)","line 456"],["S4","pred_original_sample.clamp(...)","line 474"],["S7","alpha_prod_t_prev ** (0.5) * pred_original_sample","line 491"]],
+ pred_epsilon:[["S3","pred_epsilon = model_output","line 457"],["S6","(...) ** (0.5) * pred_epsilon","line 488"]],
+ clip_cfg:[["S4","if self.config.thresholding / elif self.config.clip_sample:","lines 471, 473"]],
+ get_variance:[["S5","variance = self._get_variance(timestep, prev_timestep)","line 480"]],
+ variance:[["S5","variance = self._get_variance(...)","line 480"],["S5","std_dev_t = eta * variance ** (0.5)","line 481"]],
+ std_dev_t:[["S5","std_dev_t = eta * variance ** (0.5)","line 481"],["S6","(1 - alpha_prod_t_prev - std_dev_t**2) ** (0.5)","line 488"]],
+ use_clipped:[["IN","use_clipped_model_output=False (the denoising loop never passes True)","the call"],["S3","if use_clipped_model_output: (skipped by default)","line 483"]],
+ eta:[["IN","eta=0.0 (the denoising loop never passes anything else)","the call, line 1062"],["S5","std_dev_t = eta * variance ** (0.5)","line 481"]],
+ pred_sample_direction:[["S6","pred_sample_direction = (...) ** (0.5) * pred_epsilon","line 488"],["S7","... + pred_sample_direction","line 491"]],
+ prev_sample:[["S7","prev_sample = alpha_prod_t_prev ** (0.5) * pred_original_sample + pred_sample_direction","line 491"],["OUT","return prev_sample","to the denoising loop, line 1062"]]
+};
+var fc=document.getElementById("fc"),fclist=document.getElementById("fclist"),flowOpenFor=null;
+function nodeHTML(k,cls){
+  var n=FN[k];
+  return '<button class="fnode'+(cls||"")+'" data-node="'+k+'" aria-expanded="false"><span class="ft"><b>'+esc(n.t)+'</b><span>'+esc(n.l)+'</span></span><span class="fd">'+esc(n.d)+'</span><span class="fmore"><b>Takes</b> '+esc(n.takes)+'<br><b>Gives</b> '+esc(n.gives)+'</span><span class="hops"></span></button>';
+}
+function buildChart(){
+  var h="";
+  ORDER.forEach(function(k,i){
+    if(i)h+='<div class="fconn"></div>';
+    h+=nodeHTML(k);
+  });
+  fclist.innerHTML=h;
+}
+buildChart();
+fclist.addEventListener("click",function(e){var b=e.target.closest(".fnode");if(!b)return;var on=!b.classList.contains("expanded");b.classList.toggle("expanded",on);b.setAttribute("aria-expanded",on)});
+function renderFlow(id){
+  flowOpenFor=id;
+  fclist.querySelectorAll(".fnode").forEach(function(b){b.classList.remove("lit","expanded");b.setAttribute("aria-expanded","false");b.querySelector(".hops").innerHTML=""});
+  if(!id){
+    fclist.classList.remove("tracing");
+    document.getElementById("fctitle").textContent="How self.scheduler.step runs";
+    document.getElementById("fchint").textContent="Top to bottom, the order one call runs in. Tap any box to see what it takes and what it gives.";
+    document.getElementById("fclegend").textContent="This whole chart is one function call; it does not loop or branch into other pages.";
+    return;
+  }
+  var name=T[id].name.replace(/ \(.*\)$/,"");
+  fclist.classList.add("tracing");
+  document.getElementById("fctitle").textContent="Where "+name+" travels";
+  document.getElementById("fchint").textContent="The lit boxes are the steps it passes through. Numbers give the order.";
+  document.getElementById("fclegend").textContent="Faded boxes do not touch it. Tap any box to see what it takes and what it gives.";
+  (HOPS[id]||[]).forEach(function(hp,i){
+    var b=fclist.querySelector('[data-node="'+hp[0]+'"]');if(!b)return;
+    b.classList.add("lit");
+    b.querySelector(".hops").insertAdjacentHTML("beforeend",'<span class="hop"><i>'+(i+1)+'</i><code>'+esc(hp[1])+'</code><span>'+esc(hp[2])+'</span></span>');
+  });
+}
+function openFlow(id){
+  openSheet(false);renderFlow(id||null);
+  if(typeof fc.showModal==="function")fc.showModal();else fc.setAttribute("open","");
+  var first=id?fclist.querySelector(".fnode.lit"):null,body=fc.querySelector(".fc-body");
+  body.scrollTop=0;
+  if(first){requestAnimationFrame(function(){body.scrollTop=Math.max(0,first.getBoundingClientRect().top-body.getBoundingClientRect().top-12)})}
+}
+function closeFlow(){if(fc.open){if(typeof fc.close==="function")fc.close();else fc.removeAttribute("open")}flowOpenFor=null}
+document.getElementById("fcclose").addEventListener("click",closeFlow);
+fc.addEventListener("close",function(){flowOpenFor=null});
+fc.addEventListener("click",function(e){if(e.target===fc)closeFlow()});
+document.getElementById("openflow").addEventListener("click",function(){openFlow(null)});
+insp.addEventListener("click",function(e){var b=e.target.closest(".flowbtn");if(b)openFlow(b.dataset.flow)});
+
+/* ---------------- light follows the day ---------------- */
+var root=document.documentElement;
+function applyLight(){
+  var h=new Date().getHours(),tod=h>=5&&h<12?"morning":h>=12&&h<17?"afternoon":h>=17&&h<22?"evening":"night";
+  var forced=root.getAttribute("data-theme"),prefDark=matchMedia("(prefers-color-scheme: dark)").matches;
+  var dark=forced==="dark"||(forced!=="light"&&prefDark);
+  var scheme,ground,light;
+  if(forced==="light"||(!dark&&(tod==="morning"||tod==="afternoon"))){
+    scheme="day";
+    ground=tod==="morning"?"#F6EEE1":"#F4EEE4";
+    light=tod==="morning"?"radial-gradient(1100px 520px at 0% 0%,rgba(255,236,200,.55),transparent 70%)"
+         :tod==="afternoon"?"radial-gradient(1200px 420px at 50% -10%,rgba(255,244,214,.6),transparent 70%)"
+         :"radial-gradient(900px 480px at 50% 110%,rgba(242,154,46,.14),transparent 70%)";
+  } else {
+    scheme="night";
+    if(tod==="night"){ground="#1A1512";light="radial-gradient(900px 460px at 50% 115%,rgba(242,154,46,.12),transparent 70%)";}
+    else{ground="#33241F";light=tod==="evening"?"radial-gradient(800px 520px at 105% 20%,rgba(224,120,74,.16),transparent 70%)":"radial-gradient(900px 460px at 50% 115%,rgba(242,154,46,.10),transparent 70%)";}
+  }
+  root.setAttribute("data-scheme",scheme);
+  root.style.setProperty("--ground",ground);
+  root.style.setProperty("--light",light);
+  if(scheme==="night"&&ground==="#33241F"){root.style.setProperty("--card","#2A1E1A");root.style.setProperty("--code-bg","#2A1E1A")}
+  else{root.style.removeProperty("--card");root.style.removeProperty("--code-bg")}
+  drawViz();
+}
+new MutationObserver(function(ms){if(ms.some(function(m){return m.attributeName==="data-theme"}))applyLight()}).observe(root,{attributes:true});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",applyLight);
+setInterval(applyLight,5*60*1000);
+
+/* ---------------- glossary links ---------------- */
+var GLP=[[/Eq\. 3\b/,"forward"],[/Eq\. 6\b/,"ddpm"],[/Eq\. 8\b/,"vpred"],[/Song et al\.?(?:\s*\d{4})?(?:['’]s)?\s+Eq\. 16/,"getvariance"],[/Song et al\.?(?:\s*\d{4})?(?:['’]s)?\s+Eq\. 12/,"ddimupdate"],[/\bDDPM(?:Scheduler)?\b/,"ddpm"],[/\bDDIM(?:Scheduler)?\b/,"ddim"],[/\bPNDM(?:Scheduler)?\b/,"pndm"],[/\bη\b|\beta\b(?!_)/,"eta"],[/v_prediction/,"vpred"],[/v-prediction/,"vpred"],[/forward process/i,"forward"],[/predicted x_0|pred_original_sample|\bx̂_0\b/i,"x0"],[/self\._get_variance/,"getvariance"],[/self\._threshold_sample/,"threshold"],[/prediction_type/,"predtype"]];
+function linkTerms(root){
+  var used={},walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:function(n){
+    var p=n.parentElement;if(!p||p.closest("code,a,button,.gl,.looks,mjx-container,dialog,script,style"))return NodeFilter.FILTER_REJECT;return NodeFilter.FILTER_ACCEPT}});
+  var nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+  nodes.forEach(function(tn){
+    var parts=tn.nodeValue.split(/(\\\(.*?\\\)|\\\[[\s\S]*?\\\])/),changed=false,frag=document.createDocumentFragment();
+    parts.forEach(function(seg,k){
+      if(k%2===1||!seg){frag.appendChild(document.createTextNode(seg));return}
+      var rest=seg;
+      while(rest){
+        var best=null;
+        GLP.forEach(function(g){if(used[g[1]])return;var m=g[0].exec(rest);if(m&&(!best||m.index<best.m.index))best={m:m,id:g[1]}});
+        if(!best){frag.appendChild(document.createTextNode(rest));break}
+        changed=true;used[best.id]=1;
+        frag.appendChild(document.createTextNode(rest.slice(0,best.m.index)));
+        var a=document.createElement("span");a.className="gl";a.setAttribute("role","button");a.tabIndex=0;a.dataset.gl=best.id;a.title="See this in Terms on this page";a.textContent=best.m[0];frag.appendChild(a);
+        rest=rest.slice(best.m.index+best.m[0].length);
+      }
+    });
+    if(changed)tn.parentNode.replaceChild(frag,tn);
+  });
+}
+document.querySelectorAll(".lede,.callbar p,.hint,.fine,.project p,.dbody .why,.answer,.panel .f p,.panel .note,.panel .kind,.arow .map,.prov p,.ntable td,.sigcap").forEach(function(el){if(!el.closest("section")||!el.closest("section").querySelector("dl.terms"))linkTerms(el)});
+function goGloss(a){
+  openSheet(false);
+  var dt=document.getElementById("gl-"+a.dataset.gl);if(!dt)return;
+  dt.scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"});
+  dt.classList.add("flash");setTimeout(function(){dt.classList.remove("flash")},1600);
+}
+document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest(".gl");if(a){e.preventDefault();e.stopPropagation();goGloss(a)}},true);
+document.addEventListener("keydown",function(e){var a=e.target.closest&&e.target.closest(".gl");if(a&&(e.key==="Enter"||e.key===" ")){e.preventDefault();goGloss(a)}});
+
+/* ---------------- line-number links ---------------- */
+var LN={};CODE.forEach(function(c){LN[c[0]]=1});
+function linkLines(root){
+  var walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:function(n){
+    var p=n.parentElement;if(!p||p.closest("code,a,button,.gl,.ln-ref,.looks,mjx-container,dialog,script,style"))return NodeFilter.FILTER_REJECT;return NodeFilter.FILTER_ACCEPT}});
+  var nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+  var re=/\b(lines?)\s+(\d{3,4})(\s*(?:to|-|–)\s*)?(\d{3,4})?\b/gi;
+  nodes.forEach(function(tn){
+    var text=tn.nodeValue;
+    if(!/\bline/i.test(text))return;
+    var frag=document.createDocumentFragment(),last=0,m,changed=false;
+    re.lastIndex=0;
+    while((m=re.exec(text))){
+      var n1=m[2],sep=m[3],n2=m[4];
+      if(!LN[n1]&&!(n2&&LN[n2]))continue;
+      frag.appendChild(document.createTextNode(text.slice(last,m.index)+m[1]+" "));
+      frag.appendChild(LN[n1]?ref(n1):document.createTextNode(n1));
+      if(sep)frag.appendChild(document.createTextNode(sep));
+      if(n2)frag.appendChild(LN[n2]?ref(n2):document.createTextNode(n2));
+      last=m.index+m[0].length;changed=true;
+    }
+    if(changed){frag.appendChild(document.createTextNode(text.slice(last)));tn.parentNode.replaceChild(frag,tn)}
+  });
+  function ref(n){var s=document.createElement("span");s.className="ln-ref";s.setAttribute("role","button");s.tabIndex=0;s.title="Jump to this line";s.dataset.lnGo=n;s.textContent=n;return s}
+}
+document.querySelectorAll(".lede,.callbar p,.hint,.fine,.project p,.dbody .why,.answer,.panel .f p,.panel .note,.panel .kind,.arow .map,.prov p,.ntable td,.sigcap,dl.terms dd").forEach(linkLines);
+function goLine(n){
+  var el=document.querySelector('.ln[data-ln="'+n+'"]');if(!el)return;
+  openSheet(false);
+  el.scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"});
+  el.classList.add("flash");setTimeout(function(){el.classList.remove("flash")},1600);
+}
+document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("[data-ln-go]");if(a){e.preventDefault();e.stopPropagation();goLine(a.dataset.lnGo)}},true);
+document.addEventListener("keydown",function(e){var a=e.target.closest&&e.target.closest("[data-ln-go]");if(a&&(e.key==="Enter"||e.key===" ")){e.preventDefault();goLine(a.dataset.lnGo)}});
+
+/* ---------------- go ---------------- */
+refreshDynamic();applyLight();paint();
+function typesetAll(){
+  if(window.MathJax&&MathJax.startup&&MathJax.startup.promise){
+    MathJax.startup.promise.then(function(){return MathJax.typesetPromise()}).then(paint).catch(function(e){console.error(e)});
+  } else setTimeout(typesetAll,100);
+}
+typesetAll();
+})();
+</script>
+</body>
+</html>

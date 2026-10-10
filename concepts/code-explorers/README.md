@@ -9,6 +9,7 @@ Open a page directly in a browser, or view it live as a Claude Artifact.
 | Page | Function | Source (pinned) | Artifact |
 | --- | --- | --- | --- |
 | `denoising_loop.html` | The denoising loop, `StableDiffusionPipeline.__call__` step 7 | [`pipeline_stable_diffusion.py` L1028-L1082](https://github.com/huggingface/diffusers/blob/v0.40.0/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py#L1028-L1082) | [live version](https://claude.ai/artifact/HbbAryhY3tphNAEuicFct7) |
+| `ddim_reverse_step.html` | DDIM's deterministic reverse step, `DDIMScheduler.step` | [`scheduling_ddim.py` L433-L491](https://github.com/huggingface/diffusers/blob/v0.40.0/src/diffusers/schedulers/scheduling_ddim.py#L433-L491) | [live version](https://claude.ai/artifact/1r22ovvRUL1W1iwgMgL8Tb) |
 
 Each page is self-contained (inline CSS/JS, MathJax from a CDN) and follows Rishav's design language (see `design-system/`).
 

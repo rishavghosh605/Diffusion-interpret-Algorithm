@@ -4,9 +4,9 @@
 
 Same rigor as `denoising_loop.html`: pinned source (diffusers v0.40.0), every line verified character-for-character, `VERIFICATION.md`'s checklist run before shipping, `MISTAKES.md` read first and added to when something new is caught. No GitHub folder/Pages work here — just build, verify, publish as a Claude Artifact, commit the `.html` to `concepts/code-explorers/` and add a row to this folder's `README.md` table.
 
-Remaining, in the X-Ray's own route order:
+Route order (the X-Ray's own), done vs. remaining:
 
-1. DDIM's reverse step — `scheduling_ddim.py` L440–495 (Stage B; the black box `denoising_loop`'s derivation 3 deferred)
+1. ~~DDIM's reverse step~~ — `scheduling_ddim.py` L433–491 (Stage B; the black box `denoising_loop`'s derivation 3 deferred). Done: [`ddim_reverse_step.html`](ddim_reverse_step.html), [live version](https://claude.ai/artifact/1r22ovvRUL1W1iwgMgL8Tb).
 2. Cross-attention — `attention.py` L960–1082 + `attention_processor.py` L1136–1160 (Stage D, the X-Ray's "deepest")
 3. UNet forward (skim) — `unet_2d_condition.py` L979–1235 (Stage C)
 4. `encode_prompt` — `pipeline_stable_diffusion.py` L332–500 (Stage A)
