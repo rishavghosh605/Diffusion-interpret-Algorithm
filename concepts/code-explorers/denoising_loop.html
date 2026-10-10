@@ -436,7 +436,7 @@ var T={
   note:function(){return guide==="on"?"With this on, the batch doubles at line 1037 and the guidance combine at line 1055 runs.":"With this off, line 1037 falls through to else latents (no doubling), and the whole guidance combine block (1053 to 1055) is skipped."}},
  cat_batch:{name:"torch.cat([latents] * 2)",sym:R`\operatorname{cat}(x_t,x_t)`,kind:"A call that doubles the batch",syms:[],rows:["inp"],
   looks:function(){return guide==="on"?"(2, 4, 64, 64): two identical copies of the (1, 4, 64, 64) latent, stacked on the batch axis":"not evaluated; do_classifier_free_guidance is False, so latents is used instead"},
-  math:R`<p>Stacks the same latent twice so one UNet call can answer both halves of Eq. 13 at once. Same idea as the prompt_embeds concatenation in Stage A, line 978.</p>`,
+  math:R`<p>Stacks the same latent twice so one UNet call can answer both halves of Eq. 13 at once. Same idea as the prompt_embeds concatenation in Stage A, line 978.</p><p>Both halves are needed because guidance is a <em>direction</em>, \(\epsilon_c-\epsilon_u\), not a value either prediction holds alone: running only the conditional half would just be \(s=1\), no guidance at all. The batch size is exactly the guidance switch above: 2 when it is on, 1 when it is off.</p>`,
   flow:"Built fresh every iteration from the current latents. Feeds only into latent_model_input; never stored."},
  latent_model_input:{name:"latent_model_input",sym:R`x_t^{\text{in}}`,kind:"A tensor",syms:["s-xin"],rows:["inp","unet"],
   looks:function(){return guide==="on"?"(2, 4, 64, 64), float16":"(1, 4, 64, 64), float16"},
