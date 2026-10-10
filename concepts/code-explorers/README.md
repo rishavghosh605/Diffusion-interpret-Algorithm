@@ -12,6 +12,8 @@ Open a page directly in a browser, or view it live as a Claude Artifact.
 
 Each page is self-contained (inline CSS/JS, MathJax from a CDN) and follows Rishav's design language (see `design-system/`).
 
+Before shipping a page, see `VERIFICATION.md` for what to check and `MISTAKES.md` for the real mistakes this series has already made once — read it, don't repeat it.
+
 ## Standing convention: inline boxes stay short, the glossary holds the explanation
 
 When a token's or math symbol's inspector box ("Looks like" / "In the math" / "Comes from, goes to") touches a term that deserves real explanation (a named method, a contrast with another method, historical context), don't write the explanation inline. Instead:
