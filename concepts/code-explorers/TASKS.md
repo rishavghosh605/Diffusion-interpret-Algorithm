@@ -12,6 +12,11 @@ Remaining, in the X-Ray's own route order:
 4. `encode_prompt` — `pipeline_stable_diffusion.py` L332–500 (Stage A)
 5. Processor registry — `attention.py` L41–96 (Stage D)
 
-## Task 2 — GitHub Pages
+## Task 2 — Turn it into a walkthrough repo, with GitHub Pages
 
-Repo-hosting layer only, no artifact content work. Enable Pages on this repo (separate from the `rishavghosh605.github.io` portfolio repo, served at a sub-path, no conflict), organize one folder per stage, write each folder's README to link both the Claude Artifact and the Pages-served HTML.
+Repo-hosting and structure layer only, no artifact content work (Task 1's `.html` files are the material; this just makes them walkable). Audience: a newcomer to Stable Diffusion, reading the repo top to bottom to learn it, not someone who already knows what they're looking for.
+
+- Enable Pages on this repo (separate from the `rishavghosh605.github.io` portfolio repo, served at a sub-path, no conflict) so every page is viewable straight from a link, no download needed.
+- One ordered folder per stage, numbered to match the X-Ray's own route order (the order a newcomer should actually read them in, not the order they were built in) — e.g. `01-latent-initialisation/`, `02-denoising-loop/`, `03-reverse-step/`, and so on through Task 1's five.
+- Each folder's README: a short "what you'll learn here" before the link, plus the link itself (Artifact + Pages URL).
+- A top-level index (this folder's `README.md`, extended) that walks a newcomer through the folders in order, like a syllabus, not just a file table.
