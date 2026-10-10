@@ -109,3 +109,15 @@ A running log of real mistakes caught while building this series, kept so the sa
 **Fix:** Replaced the hardcoded span with a plain empty string for that row's `eqref` (this page doesn't cite a specific equation number for the UNet-forward row; the glossary term it would have needed doesn't exist here, and fabricating a new one just to fill the slot wasn't warranted).
 
 **Now automatic?** No new automatic check; already covered in spirit by `VERIFICATION.md` item 4's `data-gl` grep *if* that grep is extended to check inline `data-gl` attributes embedded in JS string literals, not just `GLP` array entries, since this one wasn't caught by the existing cross-reference script (it only checks `GLP`'s own ids, not every `data-gl` attribute that might appear elsewhere in the page's generated HTML). Worth tightening `VERIFICATION.md` item 3 to say so explicitly.
+
+---
+
+### An HTML entity written into a JS string that gets escaped a second time
+
+**What happened:** `unet_forward.html` marks the gaps between its curated, non-contiguous line selection with a comment like `<c>&hellip; class_emb, aug_emb: both None for SD 1.5 &hellip;</c>`. The page's own `line()` renderer runs every comment's text through `esc()`, which converts `&` to `&amp;` so arbitrary code text displays safely. Applied to the literal string `&hellip;`, that produces `&amp;hellip;`, which the browser then renders as the literal text `&hellip;`, not an ellipsis character. Caught on the second screenshot (the "what's skipped" toggle), not the first: the default view hid the gap rows entirely, so the broken text was invisible until that specific interaction was screenshotted.
+
+**Why:** `&hellip;` is correct HTML when written directly in markup, but this page's comment text isn't markup at the point it's written, it's a JS string that a renderer later escapes before inserting into the DOM. Writing an HTML entity inside a string destined for `esc()` double-encodes it. The fix for the exact same class of bug (text meant for display going through an escaping function) was never at issue on the two prior pages because neither one needed a non-ASCII punctuation mark in a comment string.
+
+**Fix:** Replaced `&hellip;` with the literal Unicode ellipsis character `…` in the source string. `esc()` only touches `&`, `<` and `>`, so a real Unicode character passes through untouched and displays correctly.
+
+**Now automatic?** No, and hard to make fully automatic: the general rule is write the actual character you want displayed into a JS string, never an HTML entity, since every page's own renderer escapes that string before it reaches the DOM. Worth a one-line callout in `VERIFICATION.md`'s reading pass (item 5) so it's checked by eye rather than assumed.

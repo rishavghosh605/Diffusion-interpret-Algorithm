@@ -8,7 +8,7 @@ Route order (the X-Ray's own), done vs. remaining:
 
 1. ~~DDIM's reverse step~~ — `scheduling_ddim.py` L433–491 (Stage B; the black box `denoising_loop`'s derivation 3 deferred). Done: [`ddim_reverse_step.html`](ddim_reverse_step.html), [live version](https://claude.ai/artifact/1r22ovvRUL1W1iwgMgL8Tb).
 2. ~~Cross-attention~~ — `attention_processor.py` L1141–1162, `AttnProcessor.__call__`'s core (Stage D, the X-Ray's "deepest"; superseded the planned `attention.py` L960–1082 + `attention_processor.py` L1136–1160 range once the actual pinned line numbers were checked). Done: [`cross_attention.html`](cross_attention.html), [live version](https://claude.ai/artifact/TbWNMtDZ7QMh3ZNi7SKzju).
-3. UNet forward (skim) — `unet_2d_condition.py` L979–1235 (Stage C)
+3. ~~UNet forward (skim)~~ — `unet_2d_condition.py` L979–1235 (Stage C). Done: [`unet_forward.html`](unet_forward.html), [live version](https://claude.ai/artifact/CnNTamggo7MCSHNrmoAAzh).
 4. `encode_prompt` — `pipeline_stable_diffusion.py` L332–500 (Stage A)
 5. Processor registry — `attention.py` L41–96 (Stage D)
 
