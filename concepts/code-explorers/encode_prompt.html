@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>How a prompt becomes prompt_embeds</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;1,7..72,400&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+window.MathJax={
+  tex:{packages:{"[+]":["html"]},inlineMath:[["\\(","\\)"]],displayMath:[["\\[","\\]"]]},
+  svg:{fontCache:"global"},
+  options:{enableMenu:false},
+  startup:{typeset:false}
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg-full.js"></script>
+<style>
+:root{
+  --paper:#F4EEE4; --ground:#F4EEE4; --card:#FFFBF5; --zone:rgba(255,251,245,.6);
+  --ink:#2B221C; --ink-soft:#4A3D32; --muted:#6A5A4C; --on-ink:#F6EFE3;
+  --line:rgba(43,34,28,.11); --line-strong:rgba(43,34,28,.22);
+  --flame:#C98A1E; --flame-soft:rgba(201,138,30,.16); --flame-ink:#6B4A08;
+  --code-bg:#FFFBF5; --glow:rgba(255,236,200,.55); --dusk:rgba(224,120,74,0);
+  --shadow-lift:0 14px 30px #3424142e,0 2px 6px #34241414;
+  --serif:"Literata","Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --sans:"Figtree",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#1A1512; --ground:#1A1512; --card:#241D19; --zone:rgba(239,229,214,.035);
+    --ink:#EFE5D6; --ink-soft:#D8CAB7; --muted:#AE9E8B; --on-ink:#1A1512;
+    --line:rgba(239,229,214,.09); --line-strong:rgba(239,229,214,.22);
+    --flame:#E9A23B; --flame-soft:rgba(233,162,59,.18); --flame-ink:#F0C77A;
+    --code-bg:#241D19; --shadow-lift:0 14px 30px #00000073;
+  }
+}
+:root[data-theme="dark"],:root[data-scheme="night"]{
+  --paper:#1A1512; --card:#241D19; --zone:rgba(239,229,214,.035);
+  --ink:#EFE5D6; --ink-soft:#D8CAB7; --muted:#AE9E8B; --on-ink:#1A1512;
+  --line:rgba(239,229,214,.09); --line-strong:rgba(239,229,214,.22);
+  --flame:#E9A23B; --flame-soft:rgba(233,162,59,.18); --flame-ink:#F0C77A;
+  --code-bg:#241D19; --shadow-lift:0 14px 30px #00000073;
+}
+:root[data-scheme="day"]{
+  --paper:#F4EEE4; --card:#FFFBF5; --zone:rgba(255,251,245,.6);
+  --ink:#2B221C; --ink-soft:#4A3D32; --muted:#6A5A4C; --on-ink:#F6EFE3;
+  --line:rgba(43,34,28,.11); --line-strong:rgba(43,34,28,.22);
+  --flame:#C98A1E; --flame-soft:rgba(201,138,30,.16); --flame-ink:#6B4A08;
+  --code-bg:#FFFBF5; --shadow-lift:0 14px 30px #3424142e,0 2px 6px #34241414;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px);background:var(--ground)}
+body{margin:0;color:var(--ink);background:var(--ground);font:15px/1.6 var(--serif);min-height:100vh;position:relative}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;background:var(--light,none);z-index:0}
+.wrap{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:40px 24px 64px}
+a{color:inherit;text-decoration-color:var(--line-strong);text-underline-offset:3px}
+a:hover{text-decoration-color:var(--flame)}
+:focus-visible{outline:2px solid var(--flame);outline-offset:2px;border-radius:4px}
+.sans{font-family:var(--sans)}
+code,.mono{font-family:var(--mono);font-size:.9em}
+
+/* header */
+h1{font:500 42px/1.1 var(--serif);letter-spacing:-.012em;margin:0 0 10px}
+.lede{font-size:17px;line-height:1.6;color:var(--ink-soft);max-width:62ch;margin:0 0 10px}
+.meta{font:500 12.5px/1.5 var(--sans);color:var(--muted);margin:0}
+h2{font:600 14.5px/20px var(--sans);margin:0 0 4px;color:var(--ink)}
+.hint{font:400 13.5px/20px var(--sans);color:var(--muted);margin:0 0 14px;max-width:70ch}
+
+/* stitch divider */
+.stitch{display:block;width:100%;height:10px;margin:44px 0 30px;color:var(--line-strong)}
+
+/* guidance switch */
+.bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;margin:28px 0 14px}
+.switch{display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:var(--zone);border:1px solid var(--line)}
+.switch button{font:500 14px/20px var(--sans);border:0;background:transparent;color:var(--muted);padding:5px 14px;border-radius:999px;cursor:pointer;transition:background .18s,color .18s}
+.switch button[aria-pressed="true"]{background:var(--ink);color:var(--on-ink)}
+.switch-label{font:500 12px/16px var(--sans);color:var(--muted);margin-right:8px}
+
+/* main grid */
+.grid{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(0,1fr);gap:16px;align-items:start}
+.side{display:grid;gap:16px;position:sticky;top:calc(16px + env(safe-area-inset-top,0px))}
+@media (max-width:900px){.grid{grid-template-columns:1fr}.side{position:static}}
+.zone{background:var(--zone);border-radius:16px;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px}
+.zone-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:0 0 10px}
+.zone-h span{font:500 12px/16px var(--sans);color:var(--muted)}
+
+/* code */
+.code{padding:10px 0;font:12.5px/1.75 var(--mono);color:var(--ink);background:var(--code-bg)}
+.ln{display:grid;grid-template-columns:44px minmax(0,1fr);padding-right:12px;transition:background .18s}
+.ln .n{color:var(--muted);text-align:right;padding-right:14px;user-select:none;opacity:.8}
+.ln .t{white-space:pre-wrap;word-break:break-word}
+.ln.lit{background:var(--flame-soft)}
+.ln.gap .t{color:var(--muted);font-style:italic}
+.kw{color:var(--muted);font-weight:600}
+.str,.com{color:var(--muted)}
+.com{font-style:italic}
+.tok{cursor:pointer;border-radius:4px;padding:0 1px;background-image:linear-gradient(currentColor,currentColor);background-size:100% 1px;background-repeat:no-repeat;background-position:0 100%;transition:background-color .15s,color .15s}
+.tok.eng{background-image:linear-gradient(var(--line-strong),var(--line-strong))}
+.tok.on{background-color:var(--flame-soft);color:var(--flame-ink);background-image:none}
+.tok.pin{background-color:var(--flame-soft);color:var(--flame-ink);background-image:none;box-shadow:inset 0 -2px 0 var(--flame)}
+
+/* math rows */
+.mrows{padding:6px 14px}
+.mrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:8px 6px;border-radius:8px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .18s}
+.mrow:last-child{border-bottom:0}
+.mrow.lit{background:var(--flame-soft)}
+.mrow .where{font:500 12px/16px var(--sans);color:var(--muted);white-space:nowrap}
+.mrow .eq{overflow-x:auto;overflow-y:hidden}
+.sigcap{font:400 13.5px/20px var(--sans);color:var(--muted);padding:2px 20px 12px}
+mjx-container{color:var(--ink)}
+mjx-container[display="true"]{margin:.3em 0 !important;text-align:left !important}
+mjx-container [class^="s-"],mjx-container [class*=" s-"]{cursor:pointer}
+mjx-container g.on{fill:var(--flame-ink)}
+mjx-container g.on use,mjx-container g.on path,mjx-container g.on rect{fill:var(--flame-ink);stroke:var(--flame);stroke-width:26px}
+
+/* inspector */
+.insp{padding:16px 18px 18px}
+.insp .panel{display:none}
+.insp .panel.show{display:block}
+.ih{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;margin-bottom:2px}
+.ih .cn{font:600 15px/1.4 var(--mono);color:var(--ink);word-break:break-word}
+.ih .arrow{font:500 13px var(--sans);color:var(--muted)}
+.kind{font:500 12px/16px var(--sans);color:var(--muted);margin:0 0 12px}
+.f{margin-top:12px}
+.f h3{font:600 13px/18px var(--sans);color:var(--muted);margin:0 0 3px}
+.f p{margin:0;font-size:15px;line-height:1.55}
+.looks{font:12.5px/1.6 var(--mono);background:var(--zone);border:1px solid var(--line);border-radius:8px;padding:8px 10px;white-space:pre-wrap}
+.viz{display:flex;gap:12px;align-items:center;margin-top:8px}
+.viz canvas{width:88px;height:88px;image-rendering:pixelated;border-radius:6px;border:1px solid var(--line);flex:none}
+.viz span{font:400 13px/18px var(--sans);color:var(--muted)}
+.note{margin-top:12px;padding:8px 12px;border-radius:8px;background:var(--flame-soft);color:var(--flame-ink);font:400 13.5px/20px var(--sans)}
+.none{font-style:italic;color:var(--muted)}
+
+/* algorithm */
+.algo{padding:6px 0}
+.arow{display:grid;grid-template-columns:28px minmax(0,1.2fr) minmax(0,1fr);gap:4px 14px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line)}
+.arow:last-child{border-bottom:0}
+.arow .k{font:500 12px var(--sans);color:var(--muted)}
+.arow .eq{overflow-x:auto;overflow-y:hidden}
+.arow .map{font:400 13.5px/20px var(--sans);color:var(--ink-soft)}
+.arow.here{background:var(--flame-soft)}
+.arow.here .map{color:var(--flame-ink);font-weight:500}
+@media (max-width:640px){.arow{grid-template-columns:24px minmax(0,1fr)}.arow .map{grid-column:2}}
+.fine{font:400 13.5px/20px var(--sans);color:var(--muted);margin:12px 0 0;max-width:72ch}
+
+/* derivations */
+details{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:10px}
+summary{list-style:none;cursor:pointer;padding:14px 18px;display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:baseline}
+summary::-webkit-details-marker{display:none}
+summary .num{font:500 20px/1 var(--serif);color:var(--flame-ink)}
+summary .q{font:500 17px/1.45 var(--serif)}
+summary .open{font:500 12px/16px var(--sans);color:var(--muted);white-space:nowrap}
+details[open] summary .open::after{content:"Close"}
+details:not([open]) summary .open::after{content:"Try it on paper, then open"}
+.dbody{padding:0 18px 18px 56px}
+@media (max-width:640px){.dbody{padding:0 14px 16px}summary{grid-template-columns:24px minmax(0,1fr)}summary .open{grid-column:2}}
+ol.steps{list-style:none;counter-reset:s;padding:0;margin:0}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:26px minmax(0,1fr);gap:0 8px;padding:7px 0;border-bottom:1px dashed var(--line)}
+ol.steps li::before{content:counter(s);font:500 12.5px/2 var(--sans);color:var(--muted)}
+ol.steps .eq{overflow-x:auto;overflow-y:hidden}
+ol.steps .why{grid-column:2;font:400 13.5px/19px var(--sans);color:var(--muted)}
+.answer{margin-top:14px;padding:12px 14px;border-radius:10px;background:var(--zone);border:1px solid var(--line)}
+.answer h3{font:600 13px/18px var(--sans);color:var(--muted);margin:0 0 4px}
+.answer p{margin:0 0 4px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.chip{font:500 12px/16px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:5px 11px;border-radius:999px;cursor:pointer}
+.chip:hover{border-color:var(--flame)}
+
+/* project + whole */
+.project p{max-width:66ch;margin:0 0 10px;font-size:16px}
+.whole{overflow-x:auto;padding:8px 4px}
+.prov{font:400 12.5px/19px var(--sans);color:var(--muted);max-width:80ch}
+.prov p{margin:0 0 6px}
+.closer{display:none}
+@media (max-width:900px){
+  .inspzone{position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));max-height:52vh;overflow:auto;z-index:5;background:var(--card);box-shadow:var(--shadow-lift);border-radius:22px;padding:8px;transform:translateY(115%);transition:transform .25s ease;visibility:hidden}
+  .inspzone.open{transform:none;visibility:visible}
+  .inspzone .card{border:0}
+  .closer{display:block;margin:4px 8px 0 auto;font:500 13px/18px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:4px 12px;border-radius:999px;cursor:pointer}
+  .wrap{padding-bottom:120px}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none !important}}
+/* caller bar */
+.callbar{margin-top:26px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;padding:12px 16px;border-radius:16px;background:var(--zone)}
+.callbar p{margin:0;font-size:15.5px;max-width:64ch}
+.openflow{font:500 14px/20px var(--sans);border:0;background:var(--ink);color:var(--on-ink);padding:7px 16px;border-radius:999px;cursor:pointer}
+.flowbtn{margin-top:8px;font:500 13px/18px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:5px 12px;border-radius:999px;cursor:pointer}
+.flowbtn:hover{border-color:var(--flame)}
+
+/* flowchart dialog */
+dialog.fc{border:0;padding:0;border-radius:22px;background:var(--card);color:var(--ink);box-shadow:var(--shadow-lift);width:min(760px,calc(100vw - 24px));max-height:calc(100vh - 32px);overflow:hidden}
+dialog.fc::backdrop{background:rgba(26,21,18,.42)}
+dialog.fc[open]{animation:fcin .2s ease}
+@keyframes fcin{from{opacity:0;transform:translateY(8px) scale(.99)}to{opacity:1;transform:none}}
+.fc-top{position:sticky;top:0;z-index:3;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:18px 20px 12px;background:var(--card);border-bottom:1px solid var(--line)}
+.fc-top h2{font:500 21px/1.3 var(--serif);margin:0}
+.fc-top p{margin:4px 0 0;font:400 13.5px/20px var(--sans);color:var(--muted)}
+.fc-top button{flex:none;font:500 13px/18px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:5px 12px;border-radius:999px;cursor:pointer}
+.fc-body{overflow:auto;max-height:calc(100vh - 150px);padding:18px 20px 26px}
+.fc-list{position:relative;display:flex;flex-direction:column;align-items:stretch;max-width:560px;margin:0 auto}
+.fnode{position:relative;background:var(--card);border:1px solid var(--line-strong);border-radius:10px;padding:9px 12px;cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%;transition:opacity .2s,border-color .2s,background .2s}
+.fnode:hover{border-color:var(--flame)}
+.fnode .ft{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.fnode .ft b{font:600 14px/19px var(--sans)}
+.fnode .ft span{font:500 11.5px/15px var(--sans);color:var(--muted);white-space:nowrap}
+.fnode .fd{display:block;font:400 14px/1.5 var(--serif);color:var(--ink-soft);margin-top:3px}
+.fnode .fmore{display:none;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);font:400 13px/19px var(--sans);color:var(--ink-soft)}
+.fnode.expanded .fmore{display:block}
+.fnode .fmore b{font-weight:600;color:var(--ink)}
+.fnode .hops{display:none;margin-top:8px}
+.fnode .hop{display:grid;grid-template-columns:22px minmax(0,1fr);gap:2px 8px;align-items:start;padding:5px 0;border-top:1px dashed var(--line)}
+.fnode .hop i{font:600 11.5px/20px var(--sans);font-style:normal;text-align:center;border-radius:999px;background:var(--flame-soft);color:var(--flame-ink);width:20px;height:20px}
+.fnode .hop code{display:block;font:12px/1.5 var(--mono);color:var(--ink);word-break:break-word}
+.fnode .hop span{grid-column:2;font:400 12.5px/17px var(--sans);color:var(--ink-soft)}
+.fc-list.tracing .fnode{opacity:.42}
+.fc-list.tracing .fnode.lit{opacity:1;border-color:var(--flame);background:var(--card)}
+.fc-list.tracing .fnode.lit .hops{display:block}
+.fnode.me{background:var(--flame-soft);border-color:transparent}
+.fc-list.tracing .fnode.me:not(.lit){background:var(--flame-soft)}
+.fconn{align-self:center;width:1.5px;height:20px;background:var(--line-strong);position:relative;flex:none}
+.fconn::after{content:"";position:absolute;left:50%;bottom:-1px;width:7px;height:7px;border-right:1.5px solid var(--line-strong);border-bottom:1.5px solid var(--line-strong);transform:translateX(-50%) rotate(45deg)}
+.fgroup{position:relative;border:1.5px solid var(--line-strong);border-radius:16px;padding:10px 10px 12px;background:var(--zone);display:flex;flex-direction:column}
+.fgroup.me{border-color:var(--flame);background:var(--flame-soft)}
+.fgroup > .fnode.head{margin-bottom:10px}
+.fgroup .kids{display:flex;flex-direction:column;margin:0 0 0 18px}
+.fgroup .kids .fnode{padding:7px 10px}
+.fgroup .kids .fconn{height:14px}
+.loopback{position:absolute;right:-17px;top:62px;bottom:28px;width:14px;border:1.5px dashed var(--muted);border-left:0;border-radius:0 12px 12px 0;opacity:.8}
+.loopback span{position:absolute;right:-6px;top:50%;transform:translate(100%,-50%);font:600 11.5px/15px var(--sans);color:var(--muted);white-space:nowrap}
+.fc-legend{font:400 13px/19px var(--sans);color:var(--muted);max-width:560px;margin:0 auto 14px}
+@media (max-width:640px){.fgroup .kids{margin-left:8px}.loopback{display:none}.fc-body{padding:14px 12px 22px}}
+@media (prefers-reduced-motion: reduce){dialog.fc[open]{animation:none}}
+
+/* glossary + notation */
+.glh{font:600 14.5px/20px var(--sans);margin:22px 0 2px}
+.glsub{font:400 13.5px/20px var(--sans);color:var(--muted);margin:0 0 8px;max-width:70ch}
+dl.terms dt.flash,dl.terms dt.flash + dd{background:var(--flame-soft)}
+dl.terms dt,dl.terms dd{transition:background .4s}
+.gl{color:inherit;text-decoration:underline dotted var(--muted);text-underline-offset:3px;cursor:pointer}
+.gl:hover{text-decoration-color:var(--flame)}
+.ln-ref{font-family:var(--mono);font-size:.93em;color:inherit;text-decoration:underline dotted var(--muted);text-underline-offset:3px;cursor:pointer}
+.ln-ref:hover{text-decoration-color:var(--flame)}
+.ln.flash{background:var(--flame-soft)}
+dl.terms{display:grid;grid-template-columns:minmax(150px,220px) minmax(0,1fr);gap:0;margin:10px 0 0;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+dl.terms dt,dl.terms dd{margin:0;padding:10px 14px;border-bottom:1px solid var(--line)}
+dl.terms dt{font:600 13.5px/19px var(--sans)}
+dl.terms dd{font-size:15px}
+dl.terms dt:last-of-type,dl.terms dd:last-of-type{border-bottom:0}
+@media (max-width:640px){dl.terms{grid-template-columns:1fr}dl.terms dt{border-bottom:0;padding-bottom:0}}
+.ntable{overflow-x:auto}
+.ntable table{border-collapse:collapse;width:100%;min-width:620px;font-size:14.5px}
+.ntable th,.ntable td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--line)}
+.ntable th{font:600 12.5px/17px var(--sans);color:var(--muted)}
+.ntable tr:last-child td{border-bottom:0}
+.ntable td:first-child{font:500 13.5px/19px var(--sans)}
+.eqref{font:500 11.5px/15px var(--sans);color:var(--muted);display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>How a prompt becomes prompt_embeds</h1>
+  <p class="lede">A string goes in. CLIP's tokenizer and text encoder turn it into a tensor cross-attention (a separate page) can read. This page is that path, and the parallel path a negative prompt takes to make classifier-free guidance possible at all.</p>
+  <p class="meta">Stage A of your <a href="https://claude.ai/artifact/MnpGyn4QjAEuY82bKTgBTF" target="_blank" rel="noopener">SD 1.5 X-Ray</a>, prompt encoding. diffusers v0.40.0, <a href="https://github.com/huggingface/diffusers/blob/v0.40.0/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py#L332-L512" target="_blank" rel="noopener">pipeline_stable_diffusion.py lines 332 to 512</a>, <code>StableDiffusionPipeline.encode_prompt</code>. This is a skim, not a full dive: the code pane shows SD 1.5's real path only, skipping (never pinning as run) the LoRA scale setup, textual inversion token conversion, the clip_skip branch, and both error-raising branches. Notation follows the survey by Fuest et al. (2024) for classifier-free guidance; the tokenizer and text encoder themselves are CLIP (Radford et al. 2021), which the survey doesn't cover.</p>
+</header>
+
+<div class="callbar">
+  <p>Called once per <code>__call__</code>, before <code>the denoising loop</code> (a separate page) starts, as <code>self.encode_prompt(prompt, device, num_images_per_prompt, self.do_classifier_free_guidance, negative_prompt, ...)</code>. Its two return values are concatenated into one batch (<code>torch.cat([negative_prompt_embeds, prompt_embeds])</code>) by the caller, not by this function; that concatenation is what the denoising loop page's "noise prediction split into two halves" is the other side of.</p>
+  <button class="openflow" id="openflow">Open the flowchart</button>
+</div>
+
+<div class="bar">
+  <p class="hint" style="margin:0">Hover or tap a name in the code, or a symbol in the math. Its partner lights up on the other side.</p>
+  <div><span class="switch-label">Guidance</span><span class="switch" role="group" aria-label="Guidance">
+    <button data-p="on" aria-pressed="true">CFG on (default)</button>
+    <button data-p="off" aria-pressed="false">CFG off</button>
+  </span></div>
+</div>
+
+<div class="grid">
+  <div class="zone">
+    <div class="zone-h"><h2>The code</h2><span>a curated subset, as it is at v0.40.0</span></div>
+    <div class="card code" id="code"></div>
+  </div>
+  <div class="side">
+    <div class="zone">
+      <div class="zone-h"><h2>The same shape, in math</h2><span>tap a row to see its lines</span></div>
+      <div class="card">
+        <div class="mrows" id="mrows"></div>
+        <div class="sigcap" id="sigcap"></div>
+      </div>
+    </div>
+    <div class="zone inspzone" id="inspzone">
+      <button class="closer" id="closer" aria-label="Close details">Close</button>
+      <div class="card insp" id="insp" aria-live="polite"></div>
+    </div>
+  </div>
+</div>
+
+<dialog class="fc" id="fc" aria-labelledby="fctitle">
+  <div class="fc-top"><div><h2 id="fctitle">How encode_prompt runs</h2><p id="fchint"></p></div><button id="fcclose">Close</button></div>
+  <div class="fc-body"><p class="fc-legend" id="fclegend"></p><div class="fc-list" id="fclist"></div></div>
+</dialog>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="9 6 12 6 8 7 11 6" fill="none"/></svg>
+
+<section>
+  <h2>Where it sits in the sampling algorithm</h2>
+  <p class="hint">Ho et al. (2020), Algorithm 2, written in the survey's notation. This page runs once, before the loop, not inside any row.</p>
+  <div class="card algo" id="algo"></div>
+  <p class="fine">This function has no row of its own: it runs once, before <code>__call__</code>'s loop even starts, to produce the <code>encoder_hidden_states</code> that row 3's \(\epsilon_\theta(x_t,t)\) reads on every single iteration. Nothing in Algorithm 2's own notation names the prompt at all; \(c\) (the conditioning signal) is implicit in \(\epsilon_\theta\).</p>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="11 6 8 6 12 7 9 6" fill="none"/></svg>
+
+<section>
+  <h2>Derive it on paper</h2>
+  <p class="hint">The first checks the actual 77-token limit against CLIP's own config. The second asks why a negative prompt needs its own full encode_prompt call instead of just negating a vector. The third opens clip_skip, a black box here.</p>
+  <div id="ders"></div>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="8 6 11 7 9 6 12 6" fill="none"/></svg>
+
+<section class="project">
+  <h2>What this means for your project</h2>
+  <p style="margin-top:8px">This function is the only place a prompt string ever gets read. Everything downstream, cross-attention, the UNet, the denoising loop, works entirely in terms of the resulting tensor, <code>prompt_embeds</code>. Replacing what this function returns (bypassing the tokenizer and CLIP entirely, and handing your own tensor to <code>prompt_embeds</code>, the function's own optional argument) is a documented, supported way to inject a representation the tokenizer couldn't produce.</p>
+  <p><code>negative_prompt_embeds</code> defaults to encoding the empty string <code>""</code>, not nothing: classifier-free guidance always has two embeddings to push apart, even when you never set <code>negative_prompt</code> yourself.</p>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="10 6 9 7 12 6 8 6" fill="none"/></svg>
+
+<section>
+  <h2>Seen whole</h2>
+  <p class="hint">A string (or two) go in on the left; a tensor cross-attention can read comes out on the right.</p>
+  <div class="card whole">\[\underbrace{\text{"a cat"}}_{\text{prompt}}\ \xrightarrow{\text{tokenizer}}\ \underbrace{\text{text\_input\_ids}}_{(1,\,77)}\ \xrightarrow{\text{text\_encoder}}\ \underbrace{\text{prompt\_embeds}}_{(1,\,77,\,768)}\ \xrightarrow{\ C\ }\ \text{cross-attention, a separate page}\]</div>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="9 7 12 6 8 6 11 6" fill="none"/></svg>
+
+<section>
+  <h2>Terms on this page</h2>
+  <p class="hint">Each term means exactly one thing. Underlined terms elsewhere on the page link here.</p>
+  <h3 class="glh">Code terms</h3><p class="glsub">Names for places in the code. Each points at exactly one location.</p>
+  <dl class="terms">
+    <dt id="gl-tokenizer">self.tokenizer</dt><dd>CLIP's tokenizer (<code>CLIPTokenizer</code>). Pads or truncates every prompt to exactly <code>model_max_length</code> tokens (77 for SD 1.5's CLIP), lines 396 to 402. <code>padding="max_length"</code> means a 3-word prompt and a 70-word prompt both produce the same shape.</dd>
+    <dt id="gl-textencoder">self.text_encoder</dt><dd>CLIP's text transformer (<code>CLIPTextModel</code>). Called at line 423 with no further options by default (<code>clip_skip=None</code>); returns a tuple whose first element, indexed at the same line, is the per-token hidden states used as <code>prompt_embeds</code>.</dd>
+    <dt id="gl-clipskip">clip_skip</dt><dd>An optional int, <code>None</code> by default. When set, reads an earlier transformer layer's hidden state instead of the final one (lines 426 to 437, skipped on this page's pinned path). Derivation 3 opens what that actually changes.</dd>
+    <dt id="gl-attnmask">attention_mask (this function's own, not cross-attention's)</dt><dd>Always <code>None</code> for SD 1.5: CLIP's config does not set <code>use_attention_mask</code>, so the <code>hasattr</code> check at line 417 (and 487) is always false. Every one of CLIP's 77 positions, including padding, is attended to equally; nothing marks padding as "discard."</dd>
+  </dl>
+  <h3 class="glh">Diffusion terms</h3><p class="glsub">The ideas the math is built from.</p>
+  <dl class="terms">
+    <dt id="gl-cfg">Classifier-free guidance (CFG)</dt><dd>Needs two embeddings to work at all: a conditional one (<code>prompt_embeds</code>, from the actual prompt) and an unconditional one (<code>negative_prompt_embeds</code>, from <code>negative_prompt</code> or, by default, the empty string). The denoising loop (a separate page) runs the UNet on both, then pushes the result away from the unconditional prediction, toward the conditional one, scaled by <code>guidance_scale</code>.</dd>
+    <dt id="gl-clip">CLIP (Radford et al. 2021)</dt><dd>Contrastive Language-Image Pretraining. SD 1.5 uses only its text tower here (<code>self.text_encoder</code>, <code>self.tokenizer</code>): a 77-token context, 768-dimensional hidden states, the same CLIP ViT-L/14 checkpoint used across the whole SD 1.5 family. Not covered by the survey (Fuest et al. 2024), which treats the text encoder as an opaque \(E(c)\).</dd>
+  </dl>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="11 6 9 6 12 7 8 6" fill="none"/></svg>
+
+<section>
+  <details>
+    <summary><span class="num">§</span><span class="q">Notation: where this page and the survey differ</span><span class="open"></span></summary>
+    <div class="dbody ntable">
+      <table>
+        <tr><th>Item</th><th>Survey (Fuest et al. 2024)</th><th>This page</th><th>Why it matters</th></tr>
+        <tr><td>Conditioning encoder</td><td>\(E(c)\), opaque, no architecture specified</td><td>CLIP's text tower specifically: tokenizer plus text_encoder</td><td>The survey's notation covers any encoder; SD 1.5 fixes a specific one, with a specific 77-token, 768-dimensional shape.</td></tr>
+        <tr><td>Unconditional embedding</td><td>Implicit in how CFG is described, no dedicated symbol</td><td><code>negative_prompt_embeds</code>, defaults to encoding <code>""</code></td><td>The survey's CFG description doesn't name where the unconditional embedding comes from; this page shows it is a full second encode_prompt pass, not a zero vector.</td></tr>
+      </table>
+    </div>
+  </details>
+</section>
+
+<section class="prov" style="margin-top:28px">
+  <h2>What is checked, and how</h2>
+  <p>Code and line numbers: read from diffusers v0.40.0, downloaded from PyPI in this environment (<code>pip download diffusers==0.40.0</code>, then read with Python's own file reader for exact whitespace) rather than recalled. Every pinned line on this page matches the real file exactly; gaps between pinned lines are real, named gaps (skipped branches), not glossed over.</p>
+  <p>CLIP's <code>model_max_length=77</code> and <code>use_attention_mask</code> being unset: these are standard, widely documented properties of the CLIP text tower diffusers ships with SD 1.5, not independently fetched from a live SD 1.5 config in this environment (Hub-style hosts are blocked by this sandbox's network policy). Stated as the standard CLIP ViT-L/14 configuration, not a freshly confirmed SD 1.5 override.</p>
+  <p>Papers: Fuest et al. 2024 (classifier-free guidance, prose description, no dedicated symbol for the unconditional embedding), Radford et al. 2021 (CLIP itself, not covered by the survey).</p>
+</section>
+
+</div>
+
+<script>
+
+(function(){
+"use strict";
+var R=String.raw;
+var pred="on";
+
+/* ---------------- tokens: code name <-> math ---------------- */
+var T={
+ prompt:{name:"prompt",sym:R`\text{prompt}`,kind:"The function's argument",syms:["s-p"],rows:["tok"],
+  looks:function(){return "A str or list[str], e.g. \"a cat\" or [\"a cat\", \"a dog\"] for a batch"},
+  math:"<p class='none'>No math of its own: raw text, read once by the tokenizer at line 396.</p>",
+  flow:"The function's argument, passed by __call__ from whatever the pipeline's own caller supplied. Read at lines 384 to 404."},
+ batch_size:{name:"batch_size",sym:"B",kind:"A number, computed",syms:["s-b"],rows:[],
+  looks:function(){return "1 for a single string prompt; len(prompt) for a list"},
+  math:"<p class='none'>No math on this page: just len(prompt), or inferred from prompt_embeds.shape[0] if prompt itself wasn't passed.</p>",
+  flow:"Computed at lines 384 to 389 from prompt. Used at line 457 to build the default negative prompt, and in the final reshape at line 505."},
+ text_input_ids:{name:"text_input_ids",sym:R`\text{text\_input\_ids}`,kind:"A tensor, the tokenized prompt",syms:["s-tii"],rows:["tok"],
+  looks:function(){return "(1, 77) int64: one row per prompt, always exactly 77 columns (CLIP's model_max_length), padded or truncated to fit"},
+  math:R`<p>\(\text{text\_input\_ids}=\text{Tokenizer}(\text{prompt})\), padded or truncated to exactly 77 tokens. Longer prompts lose everything past position 77; derivation 1 checks this against CLIP's own config.</p>`,
+  flow:"Computed at lines 396 to 403 by self.tokenizer. Read once, at line 423, by self.text_encoder."},
+ attention_mask:{name:"attention_mask",sym:null,kind:"Always None for SD 1.5's CLIP",syms:[],rows:[],
+  looks:function(){return "None: self.text_encoder.config.use_attention_mask is unset for CLIP, so the hasattr check at line 417 (and 487) is always false"},
+  math:"<p class='none'>No math on this page: when None, the text encoder attends to all 77 positions equally, including padding tokens.</p>",
+  flow:"Set to None at lines 419 to 420 (prompt) and 489 to 490 (negative prompt). Read by self.text_encoder at lines 423 and 492 to 494."},
+ prompt_embeds:{name:"prompt_embeds",sym:R`E(\text{prompt})`,kind:"The function's return value, computed",syms:["s-pe"],rows:["tok","embed"],
+  looks:function(){return "(1, 77, 768) going in to the repeat at line 450; (num_images_per_prompt, 77, 768) coming out of it"},
+  math:R`<p>\(\text{prompt\_embeds}=\text{text\_encoder}(\text{text\_input\_ids})[0]\), CLIP's last hidden state per token (clip_skip=None, SD 1.5's actual default). The survey's opaque \(E(c)\), made concrete: a specific tensor shape, not just a symbol.</p>`,
+  flow:"Computed at lines 422 to 424. Cast to dtype at line 446, repeated for num_images_per_prompt at lines 448 to 451. Returned at line 512. Read by every cross-attention call inside the UNet (a separate page), as encoder_hidden_states."},
+ do_classifier_free_guidance:{name:"do_classifier_free_guidance",sym:null,kind:"The function's argument, a bool",syms:[],rows:[],
+  looks:function(){return pred==="on"?"True: __call__ passes guidance_scale > 1, SD 1.5's actual default (guidance_scale=7.5)":"False: this page's \"CFG off\" view, as if guidance_scale were 1"},
+  math:"<p class='none'>No math of its own: gates whether the entire negative-prompt branch (lines 454 to 505) runs at all.</p>",
+  flow:"Passed in by __call__, itself computed from guidance_scale > 1. Checked at lines 454 and 498."},
+ negative_prompt:{name:"negative_prompt",sym:R`c_\varnothing`,kind:"The function's argument, or None",syms:["s-np"],rows:["cfg"],
+  looks:function(){return "None by default: the pipeline's own caller never has to set this"},
+  math:R`<p>\(c_\varnothing\), the unconditional signal's source text. None by default, in which case line 457 substitutes the empty string "" for every item in the batch: CFG always compares against something, never against a zero vector.</p>`,
+  flow:"Passed in by __call__ (usually None). Read at lines 456 to 472 to build uncond_tokens."},
+ uncond_tokens:{name:"uncond_tokens",sym:null,kind:"A list[str], computed",syms:[],rows:["cfg"],
+  looks:function(){return "[\"\"] * batch_size when negative_prompt is None (the common case); otherwise negative_prompt itself, wrapped in a list if it was a single string"},
+  math:"<p class='none'>No math on this page: the text that becomes the unconditional embedding, same role prompt plays for the conditional one.</p>",
+  flow:"Computed at lines 456 to 472. Read once, at line 480, by self.tokenizer."},
+ uncond_input:{name:"uncond_input",sym:null,kind:"A tensor, the tokenized uncond_tokens",syms:[],rows:["cfg"],
+  looks:function(){return "(1, max_length) int64, where max_length = prompt_embeds.shape[1] (always 77 after line 478): the same shape as text_input_ids, by construction"},
+  math:"<p class='none'>No math on this page: tokenized the same way as the prompt, at lines 479 to 485, padded to match prompt_embeds' own sequence length exactly.</p>",
+  flow:"Computed at lines 478 to 485 by self.tokenizer. Read once, at line 493, by self.text_encoder."},
+ negative_prompt_embeds:{name:"negative_prompt_embeds",sym:R`E(c_\varnothing)`,kind:"The function's other return value, computed",syms:["s-npe"],rows:["cfg"],
+  looks:function(){return pred==="on"?"(1, 77, 768) going in to line 504's repeat; (num_images_per_prompt, 77, 768) coming out":"Not computed at all when CFG is off: lines 454 to 505 never run, and the function's second return value stays whatever was passed in (None by default)"},
+  math:R`<p>\(E(c_\varnothing)=\text{text\_encoder}(\text{uncond\_input})[0]\), computed exactly the same way as prompt_embeds, lines 492 to 496, just from uncond_tokens instead of prompt.</p>`,
+  flow:"Computed at lines 492 to 496, only when do_classifier_free_guidance is True and no override was passed in. Cast and repeated at lines 502 to 505. Returned at line 512. Concatenated with prompt_embeds by __call__, not by this function."}
+};
+var SYM2TOK={"s-p":"prompt","s-b":"batch_size","s-tii":"text_input_ids","s-pe":"prompt_embeds","s-np":"negative_prompt","s-npe":"negative_prompt_embeds"};
+
+/* ---------------- code (a curated, non-contiguous skim) ---------------- */
+var CODE=[
+ [0,"        … signature, docstring and LoRA scale setup: lines 332 to 383 skipped, lora_scale is None for SD 1.5's own pipeline …"],
+ [384,"        <k>if</k> prompt <k>is not</k> None <k>and</k> isinstance(prompt, str):"],
+ [385,"            [[batch_size|batch_size]] = 1"],
+ [386,"        <k>elif</k> prompt <k>is not</k> None <k>and</k> isinstance(prompt, list):"],
+ [387,"            batch_size = len(prompt)"],
+ [388,"        <k>else</k>:"],
+ [389,"            batch_size = prompt_embeds.shape[0]"],
+ [391,"        <k>if</k> prompt_embeds <k>is</k> None:"],
+ [0,"            … textual inversion token conversion: lines 392 to 395 skipped, not used by SD 1.5's own pipeline …"],
+ [396,"            text_inputs = self.tokenizer("],
+ [397,"                [[prompt|prompt]],"],
+ [398,"                padding=<s>\"max_length\"</s>,"],
+ [399,"                max_length=self.tokenizer.model_max_length,"],
+ [400,"                truncation=<k>True</k>,"],
+ [401,"                return_tensors=<s>\"pt\"</s>,"],
+ [402,"            )"],
+ [403,"            [[text_input_ids|text_input_ids]] = text_inputs.input_ids"],
+ [404,"            untruncated_ids = self.tokenizer(prompt, padding=<s>\"longest\"</s>, return_tensors=<s>\"pt\"</s>).input_ids"],
+ [406,"            <k>if</k> untruncated_ids.shape[-1] &gt;= text_input_ids.shape[-1] <k>and not</k> torch.equal("],
+ [407,"                text_input_ids, untruncated_ids"],
+ [408,"            ):"],
+ [409,"                removed_text = self.tokenizer.batch_decode("],
+ [410,"                    untruncated_ids[:, self.tokenizer.model_max_length - 1 : -1]"],
+ [411,"                )"],
+ [412,"                logger.warning("],
+ [413,"                    <s>\"The following part of your input was truncated because CLIP can only handle sequences up to\"</s>"],
+ [414,"                    <s>f\" {self.tokenizer.model_max_length} tokens: {removed_text}\"</s>"],
+ [415,"                )"],
+ [0,"            … attention_mask when CLIP's config sets use_attention_mask: lines 417 to 418 skipped, always false for SD 1.5's CLIP …"],
+ [419,"            <k>else</k>:"],
+ [420,"                [[attention_mask|attention_mask]] = <k>None</k>"],
+ [422,"            <k>if</k> clip_skip <k>is</k> None:"],
+ [423,"                [[prompt_embeds|prompt_embeds]] = self.text_encoder(text_input_ids.to(device), attention_mask=attention_mask)"],
+ [424,"                prompt_embeds = prompt_embeds[0]"],
+ [0,"            … clip_skip branch, an earlier hidden layer instead: lines 425 to 437 skipped, clip_skip is None by default …"],
+ [439,"        <k>if</k> self.text_encoder <k>is not</k> None:"],
+ [440,"            prompt_embeds_dtype = self.text_encoder.dtype"],
+ [0,"        … unet/else fallback for prompt_embeds_dtype: lines 441 to 445 skipped, self.text_encoder is never None for SD 1.5 …"],
+ [446,"        prompt_embeds = prompt_embeds.to(dtype=prompt_embeds_dtype, device=device)"],
+ [448,"        bs_embed, seq_len, _ = prompt_embeds.shape"],
+ [450,"        prompt_embeds = prompt_embeds.repeat(1, num_images_per_prompt, 1)"],
+ [451,"        prompt_embeds = prompt_embeds.view(bs_embed * num_images_per_prompt, seq_len, -1)"],
+ [454,"        <k>if</k> [[do_classifier_free_guidance|do_classifier_free_guidance]] <k>and</k> negative_prompt_embeds <k>is</k> None:"],
+ [456,"            <k>if</k> [[negative_prompt|negative_prompt]] <k>is</k> None:"],
+ [457,"                [[uncond_tokens|uncond_tokens]] = [<s>\"\"</s>] * batch_size"],
+ [0,"            … type-mismatch and batch-size-mismatch error branches: lines 458 to 470 skipped, both raise instead of returning …"],
+ [471,"            <k>else</k>:"],
+ [472,"                uncond_tokens = negative_prompt"],
+ [0,"            … textual inversion token conversion, again: lines 474 to 476 skipped, same as line 392 …"],
+ [478,"            max_length = prompt_embeds.shape[1]"],
+ [479,"            [[uncond_input|uncond_input]] = self.tokenizer("],
+ [480,"                uncond_tokens,"],
+ [481,"                padding=<s>\"max_length\"</s>,"],
+ [482,"                max_length=max_length,"],
+ [483,"                truncation=<k>True</k>,"],
+ [484,"                return_tensors=<s>\"pt\"</s>,"],
+ [485,"            )"],
+ [0,"            … attention_mask when CLIP's config sets use_attention_mask: lines 487 to 488 skipped, same as line 417 …"],
+ [489,"            <k>else</k>:"],
+ [490,"                attention_mask = <k>None</k>"],
+ [492,"            [[negative_prompt_embeds|negative_prompt_embeds]] = self.text_encoder("],
+ [493,"                uncond_input.input_ids.to(device),"],
+ [494,"                attention_mask=attention_mask,"],
+ [495,"            )"],
+ [496,"            negative_prompt_embeds = negative_prompt_embeds[0]"],
+ [498,"        <k>if</k> do_classifier_free_guidance:"],
+ [500,"            seq_len = negative_prompt_embeds.shape[1]"],
+ [502,"            negative_prompt_embeds = negative_prompt_embeds.to(dtype=prompt_embeds_dtype, device=device)"],
+ [504,"            negative_prompt_embeds = negative_prompt_embeds.repeat(1, num_images_per_prompt, 1)"],
+ [505,"            negative_prompt_embeds = negative_prompt_embeds.view(batch_size * num_images_per_prompt, seq_len, -1)"],
+ [0,"        … LoRA unscale cleanup: lines 507 to 510 skipped, no LoRA layers loaded by SD 1.5's own pipeline …"],
+ [512,"        <k>return</k> prompt_embeds, negative_prompt_embeds"]
+];
+var ENG={attention_mask:1};
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+function line(src){
+  var out="",re=/\[\[(\w+)\|(.+?)\]\]|<k>(.*?)<\/k>|<s>(.*?)<\/s>|<c>(.*?)<\/c>/g,last=0,m;
+  while((m=re.exec(src))){
+    out+=src.slice(last,m.index);
+    if(m[1])out+='<span class="tok'+(ENG[m[1]]?" eng":"")+'" tabindex="0" role="button" data-id="'+m[1]+'">'+esc(m[2])+'</span>';
+    else if(m[3]!==undefined)out+='<span class="kw">'+esc(m[3])+'</span>';
+    else if(m[4]!==undefined)out+='<span class="str">'+esc(m[4])+'</span>';
+    else out+='<span class="com">'+esc(m[5])+'</span>';
+    last=re.lastIndex;
+  }
+  return out+src.slice(last);
+}
+document.getElementById("code").innerHTML=CODE.map(function(l){return l[0]===0?'<div class="ln gap" data-ln="0"><span class="n"></span><span class="t">'+line(l[1])+'</span></div>':'<div class="ln" data-ln="'+l[0]+'"><span class="n">'+l[0]+'</span><span class="t">'+line(l[1])+'</span></div>'}).join("");
+
+/* ---------------- math rows ---------------- */
+var ROWS={
+ tok:{tex:R`\class{s-tii}{\text{text\_input\_ids}}=\mathrm{Tokenizer}(\class{s-p}{\text{prompt}}),\quad\text{padded/truncated to }77`,where:"lines 396 to 404",lines:[396,404],tok:"text_input_ids"},
+ embed:{tex:R`\class{s-pe}{E(\text{prompt})}=\text{text\_encoder}(\text{text\_input\_ids})[0]`,where:"lines 422 to 424",lines:[422,424],tok:"prompt_embeds"},
+ cfg:{tex:R`\class{s-npe}{E(\class{s-np}{c_\varnothing})}=\text{text\_encoder}(\mathrm{Tokenizer}(\text{uncond\_tokens}))[0]`,where:"lines 456 to 496, only when CFG is on",lines:[456,496],tok:"negative_prompt_embeds"}
+};
+document.getElementById("mrows").innerHTML=Object.keys(ROWS).map(function(k){return '<div class="mrow" data-row="'+k+'" tabindex="0" role="button"><div class="eq">\\['+ROWS[k].tex+'\\]</div><span class="where">'+ROWS[k].where+'</span></div>'}).join("");
+
+/* ---------------- inspector panels (built once) ---------------- */
+var insp=document.getElementById("insp");
+Object.keys(T).forEach(function(id){
+  var t=T[id],p=document.createElement("div");p.className="panel";p.dataset.id=id;
+  var h='<div class="ih"><span class="cn">'+esc(t.name)+'</span>'+(t.sym?'<span class="arrow">is</span><span>\\('+t.sym+'\\)</span>':'')+'</div>';
+  h+='<p class="kind">'+t.kind+'</p>';
+  h+='<div class="f"><h3>Looks like</h3><div class="looks" data-looks></div></div>';
+  h+='<div class="f"><h3>In the math</h3><div data-math></div></div>';
+  h+='<div class="f"><h3>Comes from, goes to</h3><p>'+esc(t.flow)+'</p><button class="flowbtn" data-flow="'+id+'">Show this on the flowchart</button></div>';
+  if(t.note)h+='<div class="note" data-note></div>';
+  p.innerHTML=h;insp.appendChild(p);
+});
+
+/* ---------------- dynamic text ---------------- */
+function refreshDynamic(){
+  document.querySelectorAll(".panel").forEach(function(p){
+    var t=T[p.dataset.id];p.querySelector("[data-looks]").textContent=t.looks();
+    var mel=p.querySelector("[data-math]");mel.innerHTML=typeof t.math==="function"?t.math():t.math;
+    var n=p.querySelector("[data-note]");if(n){n.textContent=typeof t.note==="function"?t.note():t.note;linkTerms(n);linkLines(n)}
+  });
+  document.getElementById("sigcap").textContent=pred==="on"?"Right now: CFG on (SD 1.5's actual default, guidance_scale=7.5). The negative-prompt branch (lines 454 to 505) runs.":"Right now: CFG off, as if guidance_scale were 1. Lines 454 to 505 never run; negative_prompt_embeds stays whatever was passed in, None by default.";
+}
+
+/* ---------------- linking ---------------- */
+var pinned="prompt_embeds",hover=null;
+function mathEls(cls){return document.querySelectorAll("mjx-container g."+cls)}
+function paint(){
+  var id=hover||pinned,t=T[id];
+  document.querySelectorAll(".tok").forEach(function(e){e.classList.toggle("on",e.dataset.id===id&&id!==pinned);e.classList.toggle("pin",e.dataset.id===pinned)});
+  document.querySelectorAll("mjx-container g.on").forEach(function(g){g.classList.remove("on")});
+  t.syms.forEach(function(c){mathEls(c).forEach(function(g){g.classList.add("on")})});
+  document.querySelectorAll(".mrow").forEach(function(r){r.classList.toggle("lit",t.rows.indexOf(r.dataset.row)>=0)});
+  var lit={};t.rows.forEach(function(k){for(var n=ROWS[k].lines[0];n<=ROWS[k].lines[1];n++)lit[n]=1});
+  document.querySelectorAll(".ln").forEach(function(l){l.classList.toggle("lit",!!lit[l.dataset.ln])});
+  document.querySelectorAll(".panel").forEach(function(p){p.classList.toggle("show",p.dataset.id===id)});
+}
+var narrow=matchMedia("(max-width:900px)");
+function openSheet(on){document.getElementById("inspzone").classList.toggle("open",on&&narrow.matches)}
+function pin(id,fromUser){pinned=id;hover=null;paint();if(fromUser!==false)openSheet(true)}
+document.getElementById("closer").addEventListener("click",function(e){e.stopPropagation();openSheet(false)});
+var code=document.getElementById("code");
+code.addEventListener("mouseover",function(e){var t=e.target.closest(".tok");if(t){hover=t.dataset.id;paint()}});
+code.addEventListener("mouseleave",function(){hover=null;paint()});
+code.addEventListener("click",function(e){var t=e.target.closest(".tok");if(t)pin(t.dataset.id)});
+code.addEventListener("keydown",function(e){var t=e.target.closest(".tok");if(t&&(e.key==="Enter"||e.key===" ")){e.preventDefault();pin(t.dataset.id)}});
+function symOf(el){var g=el.closest&&el.closest("g[class]");while(g){var cls=(g.getAttribute("class")||"").split(/\s+/).filter(function(c){return SYM2TOK[c]});if(cls.length)return SYM2TOK[cls[0]];g=g.parentElement&&g.parentElement.closest("g[class]")}return null}
+document.addEventListener("mouseover",function(e){if(!e.target.closest||!e.target.closest("mjx-container"))return;var id=symOf(e.target);if(id&&id!==hover){hover=id;paint()}});
+document.addEventListener("mouseout",function(e){if(e.target.closest&&e.target.closest("mjx-container")&&hover&&!(e.relatedTarget&&e.relatedTarget.closest&&e.relatedTarget.closest("mjx-container"))){hover=null;paint()}});
+document.addEventListener("click",function(e){
+  if(e.target.closest&&e.target.closest("mjx-container")){var id=symOf(e.target);if(id){pin(id);e.stopPropagation();return}}
+  var r=e.target.closest&&e.target.closest(".mrow");if(r){pin(ROWS[r.dataset.row].tok);return}
+  var c=e.target.closest&&e.target.closest("[data-go]");if(c){pin(c.dataset.go);document.getElementById("code").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"})}
+},true);
+document.getElementById("mrows").addEventListener("keydown",function(e){var r=e.target.closest(".mrow");if(r&&(e.key==="Enter"||e.key===" ")){e.preventDefault();pin(ROWS[r.dataset.row].tok)}});
+document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!fc.open){if(document.getElementById("inspzone").classList.contains("open"))openSheet(false);else pin("prompt_embeds",false)}});
+document.querySelectorAll(".switch button").forEach(function(b){b.addEventListener("click",function(){
+  pred=b.dataset.p;document.querySelectorAll(".switch button").forEach(function(x){x.setAttribute("aria-pressed",x===b)});refreshDynamic();
+})});
+
+/* ---------------- algorithm ---------------- */
+var ALGO=[
+ [R`x_T\sim\pi(x_T)=\mathcal N(0,I)`,"prepare_latents, a separate page.","p. 2"],
+ [R`\textbf{for } t=T,\dots,1\ \textbf{do}`,"the denoising loop, a separate page, line 1032",""],
+ [R`\epsilon_\theta(x_t,t)`,"the UNet forward (a separate page): reads prompt_embeds as encoder_hidden_states, every iteration",""],
+ [R`\mu_\theta(x_t,t)=\tfrac{1}{\sqrt{\alpha_t}}\Big(x_t-\tfrac{1-\alpha_t}{\sqrt{1-\bar\alpha_t}}\,\epsilon_\theta(x_t,t)\Big)`,"not on this page: DDIM's reverse step, a separate page, computes this differently",""],
+ [R`x_{t-1}\sim\mathcal N\big(\mu_\theta(x_t,t),\,\Sigma_\theta\big)`,"not on this page: the reverse step, a separate page",""],
+ [R`\textbf{return } x_0`,"after the denoising loop ends: vae.decode, a separate page",""]
+];
+document.getElementById("algo").innerHTML=ALGO.map(function(a,i){
+  var eqref=a[2];
+  return '<div class="arow"><span class="k">'+(i+1)+'</span><div class="eq">\\('+a[0]+'\\)'+(eqref&&typeof eqref==="string"?'<span class="eqref">'+(eqref.indexOf("survey")===0||eqref.indexOf("p.")===0?eqref:"survey "+eqref)+'</span>':'')+'</div><div class="map">'+a[1]+'</div></div>';
+}).join("");
+
+/* ---------------- derivations ---------------- */
+var DERS=[
+ {q:"Check the 77-token limit named at line 399 against CLIP's own documented config.",
+  steps:[
+   [R`\text{max\_length}=\text{self.tokenizer.model\_max\_length}`,"Line 399: the tokenizer's own configured limit, not a number this page invents."],
+   [R`\text{CLIPTokenizer (openai/clip-vit-large-patch14): model\_max\_length}=77`,"CLIP ViT-L/14's own published config, the checkpoint SD 1.5 ships with; standard, widely documented, not independently re-fetched in this environment (network blocked)."],
+   [R`\text{padding="max\_length"}\Rightarrow\text{every prompt, short or long, becomes exactly }(1,77)`,"Lines 398 to 401: padding always fills to the max, truncation always cuts to it. Shape is never prompt-dependent."],
+   [R`\text{untruncated\_ids.shape[-1]}\ge\text{text\_input\_ids.shape[-1]}\ \text{and not equal}\Rightarrow\text{warn}`,"Line 406's actual condition: only warns when something real got cut, comparing the untruncated tokenization against the truncated one, not just checking prompt length in words."]
+  ],
+  answer:R`<p>77 is read from the tokenizer's own config, not hardcoded on this page; it matches CLIP ViT-L/14's documented value, the checkpoint SD 1.5 actually uses. The warning at line 412 only fires when truncation actually dropped tokens, verified by comparing two tokenizations, not by estimating word count.</p>`,
+  chips:[["text_input_ids","text_input_ids"],["prompt","prompt"]]},
+ {q:"Why does classifier-free guidance need a full second encode_prompt pass, not just prompt_embeds negated or zeroed?",
+  steps:[
+   [R`\text{if negated: } E(c_\varnothing)\overset{?}{=}-E(c)`,"A tempting shortcut: CLIP's embedding space isn't linear in that way. Negating a sentence's embedding doesn't produce the embedding of its absence."],
+   [R`\text{if zeroed: } E(c_\varnothing)\overset{?}{=}\mathbf 0`,"Also wrong: CLIP never produces an all-zero output for any real input, including the empty string; a zero vector is out of distribution for the text encoder, not a meaningful 'no prompt' representation."],
+   [R`\text{actual: } E(c_\varnothing)=\text{text\_encoder}(\text{Tokenizer}(\texttt{""}))[0]`,"Lines 456 to 457 and 492 to 496: the empty string is tokenized and encoded exactly like any other prompt, producing a real, in-distribution embedding."],
+   [R`\Rightarrow\ \text{two real forward passes through the same text\_encoder, same shape, same distribution}`,"Both embeddings come from the identical encoding pipeline; only the input text differs. That's what makes comparing them meaningful."]
+  ],
+  answer:R`<p>The unconditional embedding has to come from the same text encoder, on real (if empty) text, to live in the same representation space as the conditional embedding. Negating or zeroing a vector produces something the text encoder never would have, which the UNet (trained only on real CLIP outputs) has no grounds to interpret consistently.</p>`,
+  chips:[["negative_prompt_embeds","negative_prompt_embeds"],["uncond_tokens","uncond_tokens"]]},
+ {q:"One level down: open clip_skip, the branch skipped on this page's pinned path.",
+  steps:[
+   [R`\text{clip\_skip=None (default): hidden\_states}=\text{text\_encoder}(\dots)[0]`,"The pinned path (line 423 to 424): CLIP's own final output, already through its final_layer_norm internally."],
+   [R`\text{clip\_skip=}k\ (k\ge1):\ \text{output\_hidden\_states=True}`,"Line 426 to 428: asks the text encoder to return every intermediate layer's hidden state, not just the last."],
+   [R`\text{hidden\_states}=\text{prompt\_embeds}[-1][-(k+1)]`,"Line 432: index from the end. [-1] selects the full tuple of per-layer hidden states; [-(k+1)] walks back k layers from the top, skipping the last k."],
+   [R`\text{then: self.text\_encoder.text\_model.final\_layer\_norm(hidden\_states)}`,"Line 437: the chosen earlier layer never passed through CLIP's own final norm (only the true last layer does inside the model), so this function applies it manually."]
+  ],
+  answer:R`<p>clip_skip=k takes the hidden state from k layers before CLIP's output, instead of the output itself, then manually re-applies the final LayerNorm that layer would otherwise be missing. Some fine-tuned models are trained expecting this earlier representation (a common convention from the Stable Diffusion community, not part of CLIP's own design); SD 1.5's own default (clip_skip=None) never takes this branch.</p>`,
+  chips:[["prompt_embeds","prompt_embeds"],["prompt","prompt"]]}
+];
+document.getElementById("ders").innerHTML=DERS.map(function(d,i){
+  return '<details><summary><span class="num">'+(i+1)+'</span><span class="q">'+d.q+'</span><span class="open"></span></summary><div class="dbody"><ol class="steps">'+
+   d.steps.map(function(s){return '<li><div class="eq">\\['+s[0]+'\\]</div><div class="why">'+s[1]+'</div></li>'}).join("")+
+   '</ol><div class="answer"><h3>'+(i<2?"The answer in one line":"The answer in two lines")+'</h3>'+d.answer+'</div><div class="chips">'+
+   d.chips.map(function(c){return '<button class="chip" data-go="'+c[0]+'">Show '+esc(c[1])+' in the code</button>'}).join("")+'</div></div></details>';
+}).join("");
+
+/* ---------------- flowchart dialog (this function's own steps, linear) ---------------- */
+var FN={
+ IN:{t:"Inputs",l:"from __call__, before the loop starts",d:"What encode_prompt receives, once per generation.",
+  takes:"nothing yet",gives:"prompt, device, num_images_per_prompt, do_classifier_free_guidance, negative_prompt = None"},
+ S1:{t:"Step 1: batch_size",l:"lines 384 to 389",d:"1 for a single string, len(prompt) for a list.",takes:"prompt",gives:"batch_size"},
+ S2:{t:"Step 2: tokenize the prompt",l:"lines 396 to 415",d:"Pad or truncate to exactly 77 tokens; warn if anything real was cut.",takes:"prompt",gives:"text_input_ids"},
+ S3:{t:"Step 3: encode the prompt",l:"lines 422 to 424",d:"CLIP's text encoder, clip_skip=None (SD 1.5's default): the final hidden state per token.",takes:"text_input_ids, attention_mask",gives:"prompt_embeds"},
+ S4:{t:"Step 4: repeat for num_images_per_prompt",l:"lines 446 to 451",d:"Duplicate prompt_embeds along the batch dimension, once per image requested from this one prompt.",takes:"prompt_embeds, num_images_per_prompt",gives:"prompt_embeds, repeated"},
+ S5:{t:"Step 5: build the unconditional text",l:"lines 456 to 472",d:"Empty string by default, or negative_prompt itself if one was given.",takes:"negative_prompt, batch_size",gives:"uncond_tokens"},
+ S6:{t:"Step 6: tokenize and encode it",l:"lines 478 to 496",d:"Exactly the same tokenizer and text_encoder calls as steps 2 and 3, just on uncond_tokens.",takes:"uncond_tokens",gives:"negative_prompt_embeds"},
+ S7:{t:"Step 7: repeat it too",l:"lines 498 to 505",d:"Same repeat as step 4, applied to negative_prompt_embeds. Only runs when CFG is on.",takes:"negative_prompt_embeds, num_images_per_prompt",gives:"negative_prompt_embeds, repeated"},
+ OUT:{t:"Output",l:"returned to __call__",d:"Two tensors; __call__ concatenates them into one batch before the denoising loop.",takes:"prompt_embeds, negative_prompt_embeds",gives:"encoder_hidden_states for every UNet call"}
+};
+var ORDER=["IN","S1","S2","S3","S4","S5","S6","S7","OUT"];
+var HOPS={
+ prompt:[["IN","prompt","the call"],["S1","batch_size = 1 or len(prompt)","lines 384 to 389"],["S2","text_inputs = self.tokenizer(prompt, ...)","line 396"]],
+ batch_size:[["S1","batch_size = 1 or len(prompt)","lines 384 to 389"],["S5","uncond_tokens = [\"\"] * batch_size","line 457"]],
+ text_input_ids:[["S2","text_input_ids = text_inputs.input_ids","line 403"],["S3","self.text_encoder(text_input_ids.to(device), ...)","line 423"]],
+ attention_mask:[["S2","attention_mask = None","line 420"],["S3","self.text_encoder(..., attention_mask=attention_mask)","line 423"],["S6","attention_mask = None","line 490"]],
+ prompt_embeds:[["S3","prompt_embeds = self.text_encoder(...)[0]","lines 423 to 424"],["S4","prompt_embeds = prompt_embeds.repeat(...)","lines 450 to 451"],["OUT","return prompt_embeds, negative_prompt_embeds","line 512"]],
+ do_classifier_free_guidance:[["IN","do_classifier_free_guidance","the call"],["S6","if do_classifier_free_guidance and negative_prompt_embeds is None:","line 454"],["S7","if do_classifier_free_guidance:","line 498"]],
+ negative_prompt:[["IN","negative_prompt=None","the call"],["S5","if negative_prompt is None: ... else: uncond_tokens = negative_prompt","lines 456 to 472"]],
+ uncond_tokens:[["S5","uncond_tokens = [\"\"] * batch_size (or negative_prompt)","lines 456 to 472"],["S6","uncond_input = self.tokenizer(uncond_tokens, ...)","line 479"]],
+ uncond_input:[["S6","uncond_input = self.tokenizer(uncond_tokens, ...)","lines 479 to 485"],["S6","self.text_encoder(uncond_input.input_ids.to(device), ...)","line 493"]],
+ negative_prompt_embeds:[["S6","negative_prompt_embeds = self.text_encoder(...)[0]","lines 492 to 496"],["S7","negative_prompt_embeds = negative_prompt_embeds.repeat(...)","lines 504 to 505"],["OUT","return prompt_embeds, negative_prompt_embeds","line 512"]]
+};
+var fc=document.getElementById("fc"),fclist=document.getElementById("fclist"),flowOpenFor=null;
+function nodeHTML(k,cls){
+  var n=FN[k];
+  return '<button class="fnode'+(cls||"")+'" data-node="'+k+'" aria-expanded="false"><span class="ft"><b>'+esc(n.t)+'</b><span>'+esc(n.l)+'</span></span><span class="fd">'+esc(n.d)+'</span><span class="fmore"><b>Takes</b> '+esc(n.takes)+'<br><b>Gives</b> '+esc(n.gives)+'</span><span class="hops"></span></button>';
+}
+function buildChart(){
+  var h="";
+  ORDER.forEach(function(k,i){
+    if(i)h+='<div class="fconn"></div>';
+    h+=nodeHTML(k);
+  });
+  fclist.innerHTML=h;
+}
+buildChart();
+fclist.addEventListener("click",function(e){var b=e.target.closest(".fnode");if(!b)return;var on=!b.classList.contains("expanded");b.classList.toggle("expanded",on);b.setAttribute("aria-expanded",on)});
+function renderFlow(id){
+  flowOpenFor=id;
+  fclist.querySelectorAll(".fnode").forEach(function(b){b.classList.remove("lit","expanded");b.setAttribute("aria-expanded","false");b.querySelector(".hops").innerHTML=""});
+  if(!id){
+    fclist.classList.remove("tracing");
+    document.getElementById("fctitle").textContent="How encode_prompt runs";
+    document.getElementById("fchint").textContent="Top to bottom, the order one call runs in (SD 1.5's real path only). Tap any box to see what it takes and what it gives.";
+    document.getElementById("fclegend").textContent="This whole chart is one function call; it does not loop or branch into other pages.";
+    return;
+  }
+  var name=T[id].name.replace(/ \(.*\)$/,"");
+  fclist.classList.add("tracing");
+  document.getElementById("fctitle").textContent="Where "+name+" travels";
+  document.getElementById("fchint").textContent="The lit boxes are the steps it passes through. Numbers give the order.";
+  document.getElementById("fclegend").textContent="Faded boxes do not touch it. Tap any box to see what it takes and what it gives.";
+  (HOPS[id]||[]).forEach(function(hp,i){
+    var b=fclist.querySelector('[data-node="'+hp[0]+'"]');if(!b)return;
+    b.classList.add("lit");
+    b.querySelector(".hops").insertAdjacentHTML("beforeend",'<span class="hop"><i>'+(i+1)+'</i><code>'+esc(hp[1])+'</code><span>'+esc(hp[2])+'</span></span>');
+  });
+}
+function openFlow(id){
+  openSheet(false);renderFlow(id||null);
+  if(typeof fc.showModal==="function")fc.showModal();else fc.setAttribute("open","");
+  var first=id?fclist.querySelector(".fnode.lit"):null,body=fc.querySelector(".fc-body");
+  body.scrollTop=0;
+  if(first){requestAnimationFrame(function(){body.scrollTop=Math.max(0,first.getBoundingClientRect().top-body.getBoundingClientRect().top-12)})}
+}
+function closeFlow(){if(fc.open){if(typeof fc.close==="function")fc.close();else fc.removeAttribute("open")}flowOpenFor=null}
+document.getElementById("fcclose").addEventListener("click",closeFlow);
+fc.addEventListener("close",function(){flowOpenFor=null});
+fc.addEventListener("click",function(e){if(e.target===fc)closeFlow()});
+document.getElementById("openflow").addEventListener("click",function(){openFlow(null)});
+insp.addEventListener("click",function(e){var b=e.target.closest(".flowbtn");if(b)openFlow(b.dataset.flow)});
+
+/* ---------------- light follows the day ---------------- */
+var root=document.documentElement;
+function applyLight(){
+  var h=new Date().getHours(),tod=h>=5&&h<12?"morning":h>=12&&h<17?"afternoon":h>=17&&h<22?"evening":"night";
+  var forced=root.getAttribute("data-theme"),prefDark=matchMedia("(prefers-color-scheme: dark)").matches;
+  var dark=forced==="dark"||(forced!=="light"&&prefDark);
+  var scheme,ground,light;
+  if(forced==="light"||(!dark&&(tod==="morning"||tod==="afternoon"))){
+    scheme="day";
+    ground=tod==="morning"?"#F6EEE1":"#F4EEE4";
+    light=tod==="morning"?"radial-gradient(1100px 520px at 0% 0%,rgba(255,236,200,.55),transparent 70%)"
+         :tod==="afternoon"?"radial-gradient(1200px 420px at 50% -10%,rgba(255,244,214,.6),transparent 70%)"
+         :"radial-gradient(900px 480px at 50% 110%,rgba(242,154,46,.14),transparent 70%)";
+  } else {
+    scheme="night";
+    if(tod==="night"){ground="#1A1512";light="radial-gradient(900px 460px at 50% 115%,rgba(242,154,46,.12),transparent 70%)";}
+    else{ground="#33241F";light=tod==="evening"?"radial-gradient(800px 520px at 105% 20%,rgba(224,120,74,.16),transparent 70%)":"radial-gradient(900px 460px at 50% 115%,rgba(242,154,46,.10),transparent 70%)";}
+  }
+  root.setAttribute("data-scheme",scheme);
+  root.style.setProperty("--ground",ground);
+  root.style.setProperty("--light",light);
+  if(scheme==="night"&&ground==="#33241F"){root.style.setProperty("--card","#2A1E1A");root.style.setProperty("--code-bg","#2A1E1A")}
+  else{root.style.removeProperty("--card");root.style.removeProperty("--code-bg")}
+}
+new MutationObserver(function(ms){if(ms.some(function(m){return m.attributeName==="data-theme"}))applyLight()}).observe(root,{attributes:true});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",applyLight);
+setInterval(applyLight,5*60*1000);
+
+/* ---------------- glossary links ---------------- */
+var GLP=[[/\bCLIP\b/,"clip"],[/classifier-free guidance|\bCFG\b/i,"cfg"],[/\bself\.tokenizer\b|\btokenizer\b/i,"tokenizer"],[/\bself\.text_encoder\b|\btext_encoder\b/i,"textencoder"],[/\bclip_skip\b/,"clipskip"],[/attention_mask/,"attnmask"]];
+function linkTerms(root){
+  var used={},walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:function(n){
+    var p=n.parentElement;if(!p||p.closest("code,a,button,.gl,.looks,mjx-container,dialog,script,style"))return NodeFilter.FILTER_REJECT;return NodeFilter.FILTER_ACCEPT}});
+  var nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+  nodes.forEach(function(tn){
+    var parts=tn.nodeValue.split(/(\\\(.*?\\\)|\\\[[\s\S]*?\\\])/),changed=false,frag=document.createDocumentFragment();
+    parts.forEach(function(seg,k){
+      if(k%2===1||!seg){frag.appendChild(document.createTextNode(seg));return}
+      var rest=seg;
+      while(rest){
+        var best=null;
+        GLP.forEach(function(g){if(used[g[1]])return;var m=g[0].exec(rest);if(m&&(!best||m.index<best.m.index))best={m:m,id:g[1]}});
+        if(!best){frag.appendChild(document.createTextNode(rest));break}
+        changed=true;used[best.id]=1;
+        frag.appendChild(document.createTextNode(rest.slice(0,best.m.index)));
+        var a=document.createElement("span");a.className="gl";a.setAttribute("role","button");a.tabIndex=0;a.dataset.gl=best.id;a.title="See this in Terms on this page";a.textContent=best.m[0];frag.appendChild(a);
+        rest=rest.slice(best.m.index+best.m[0].length);
+      }
+    });
+    if(changed)tn.parentNode.replaceChild(frag,tn);
+  });
+}
+document.querySelectorAll(".lede,.callbar p,.hint,.fine,.project p,.dbody .why,.answer,.panel .f p,.panel .note,.panel .kind,.arow .map,.prov p,.ntable td,.sigcap").forEach(function(el){if(!el.closest("section")||!el.closest("section").querySelector("dl.terms"))linkTerms(el)});
+function goGloss(a){
+  openSheet(false);
+  var dt=document.getElementById("gl-"+a.dataset.gl);if(!dt)return;
+  dt.scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"});
+  dt.classList.add("flash");setTimeout(function(){dt.classList.remove("flash")},1600);
+}
+document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest(".gl");if(a){e.preventDefault();e.stopPropagation();goGloss(a)}},true);
+document.addEventListener("keydown",function(e){var a=e.target.closest&&e.target.closest(".gl");if(a&&(e.key==="Enter"||e.key===" ")){e.preventDefault();goGloss(a)}});
+
+/* ---------------- line-number links ---------------- */
+var LN={};CODE.forEach(function(c){if(c[0])LN[c[0]]=1});
+function linkLines(root){
+  var walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:function(n){
+    var p=n.parentElement;if(!p||p.closest("code,a,button,.gl,.ln-ref,.looks,mjx-container,dialog,script,style"))return NodeFilter.FILTER_REJECT;return NodeFilter.FILTER_ACCEPT}});
+  var nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+  var re=/\b(lines?)\s+(\d{3,4})(\s*(?:to|-|–)\s*)?(\d{3,4})?\b/gi;
+  nodes.forEach(function(tn){
+    var text=tn.nodeValue;
+    if(!/\bline/i.test(text))return;
+    var frag=document.createDocumentFragment(),last=0,m,changed=false;
+    re.lastIndex=0;
+    while((m=re.exec(text))){
+      var n1=m[2],sep=m[3],n2=m[4];
+      if(!LN[n1]&&!(n2&&LN[n2]))continue;
+      frag.appendChild(document.createTextNode(text.slice(last,m.index)+m[1]+" "));
+      frag.appendChild(LN[n1]?ref(n1):document.createTextNode(n1));
+      if(sep)frag.appendChild(document.createTextNode(sep));
+      if(n2)frag.appendChild(LN[n2]?ref(n2):document.createTextNode(n2));
+      last=m.index+m[0].length;changed=true;
+    }
+    if(changed){frag.appendChild(document.createTextNode(text.slice(last)));tn.parentNode.replaceChild(frag,tn)}
+  });
+  function ref(n){var s=document.createElement("span");s.className="ln-ref";s.setAttribute("role","button");s.tabIndex=0;s.title="Jump to this line";s.dataset.lnGo=n;s.textContent=n;return s}
+}
+document.querySelectorAll(".lede,.callbar p,.hint,.fine,.project p,.dbody .why,.answer,.panel .f p,.panel .note,.panel .kind,.arow .map,.prov p,.ntable td,.sigcap,dl.terms dd").forEach(linkLines);
+function goLine(n){
+  var el=document.querySelector('.ln[data-ln="'+n+'"]');if(!el)return;
+  openSheet(false);
+  el.scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"});
+  el.classList.add("flash");setTimeout(function(){el.classList.remove("flash")},1600);
+}
+document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("[data-ln-go]");if(a){e.preventDefault();e.stopPropagation();goLine(a.dataset.lnGo)}},true);
+document.addEventListener("keydown",function(e){var a=e.target.closest&&e.target.closest("[data-ln-go]");if(a&&(e.key==="Enter"||e.key===" ")){e.preventDefault();goLine(a.dataset.lnGo)}});
+
+/* ---------------- go ---------------- */
+refreshDynamic();applyLight();paint();
+function typesetAll(){
+  if(window.MathJax&&MathJax.startup&&MathJax.startup.promise){
+    MathJax.startup.promise.then(function(){return MathJax.typesetPromise()}).then(paint).catch(function(e){console.error(e)});
+  } else setTimeout(typesetAll,100);
+}
+typesetAll();
+})();
+</script>
+</body>
+</html>

@@ -12,6 +12,7 @@ Open a page directly in a browser, or view it live as a Claude Artifact.
 | `ddim_reverse_step.html` | DDIM's deterministic reverse step, `DDIMScheduler.step` | [`scheduling_ddim.py` L433-L491](https://github.com/huggingface/diffusers/blob/v0.40.0/src/diffusers/schedulers/scheduling_ddim.py#L433-L491) | [live version](https://claude.ai/artifact/1r22ovvRUL1W1iwgMgL8Tb) |
 | `cross_attention.html` | Self- and cross-attention, `AttnProcessor.__call__` | [`attention_processor.py` L1141-L1162](https://github.com/huggingface/diffusers/blob/v0.40.0/src/diffusers/models/attention_processor.py#L1141-L1162) | [live version](https://claude.ai/artifact/TbWNMtDZ7QMh3ZNi7SKzju) |
 | `unet_forward.html` | The UNet forward pass (skim), `UNet2DConditionModel.forward` | [`unet_2d_condition.py` L979-L1235](https://github.com/huggingface/diffusers/blob/v0.40.0/src/diffusers/models/unets/unet_2d_condition.py#L979-L1235) | [live version](https://claude.ai/artifact/CnNTamggo7MCSHNrmoAAzh) |
+| `encode_prompt.html` | Prompt encoding (skim), `StableDiffusionPipeline.encode_prompt` | [`pipeline_stable_diffusion.py` L332-L512](https://github.com/huggingface/diffusers/blob/v0.40.0/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py#L332-L512) | [live version](https://claude.ai/artifact/1D5aAZmqgfV1NsAxp9aUX6) |
 
 Each page is self-contained (inline CSS/JS, MathJax from a CDN) and follows Rishav's design language (see `design-system/`).
 
