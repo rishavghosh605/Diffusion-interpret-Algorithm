@@ -175,6 +175,24 @@ ol.steps .why{grid-column:2;font:400 13.5px/19px var(--sans);color:var(--muted)}
 /* project + whole */
 .project p{max-width:66ch;margin:0 0 10px;font-size:16px}
 .whole{overflow-x:auto;padding:8px 4px}
+
+/* architecture funnel */
+.archfig{margin:0;overflow-x:auto}
+.archfig svg{display:block;width:100%;max-width:924px;height:auto}
+.archcap{font:500 10.5px/1 var(--sans);fill:var(--muted)}
+.archarrow{font:600 13px/1 var(--sans);fill:var(--muted);text-anchor:middle}
+.archnode{cursor:pointer}
+.archnode rect{fill:var(--flame);fill-opacity:.22;stroke:var(--line-strong);stroke-width:1;transition:fill-opacity .15s,stroke .15s}
+.archnode:hover rect,.archnode:focus-visible rect{stroke:var(--flame)}
+.archnode.active rect{stroke:var(--flame);stroke-width:2;fill-opacity:.4}
+.archnode.mid rect{fill-opacity:.55}
+.archnode.mid.active rect{fill-opacity:.7}
+.archnode.emb rect{fill:none;stroke:var(--line-strong);stroke-dasharray:3 3}
+.archnode.emb.active rect{stroke:var(--flame)}
+.archnode.emb .archcap{fill:var(--ink-soft)}
+.archpanel{margin-top:10px;padding:14px 16px}
+.archpanel h3{font:600 14px/19px var(--sans);margin:0 0 4px;color:var(--ink)}
+.archpanel p{margin:0;font-size:15px;line-height:1.55}
 .prov{font:400 12.5px/19px var(--sans);color:var(--muted);max-width:80ch}
 .prov p{margin:0 0 6px}
 .closer{display:none}
@@ -340,6 +358,88 @@ dl.terms dt:last-of-type,dl.terms dd:last-of-type{border-bottom:0}
   <h2>Seen whole</h2>
   <p class="hint">A noisy latent and a prompt go in on the left; a noise prediction, the same shape as the latent, comes out on the right.</p>
   <div class="card whole">\[\underbrace{x_t}_{\text{sample}}\ \xrightarrow{\text{conv\_in}}\ \underbrace{h_0\to h_1\to\cdots\to h_N}_{\text{down\_blocks, resolution halves each time}}\ \xrightarrow{\text{mid\_block}}\ \underbrace{h_N'\to\cdots\to h_0'}_{\text{up\_blocks, skip connections from } h_i}\ \xrightarrow{\text{conv\_out}}\ \underbrace{\hat\epsilon}_{\text{same shape as }x_t}\]</div>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="9 7 12 6 8 6 11 6" fill="none"/></svg>
+
+<section>
+  <h2>The shape, drawn</h2>
+  <p class="hint">The same funnel every convolutional network since LeCun's draws: resolution shrinks, channel depth grows, then both reverse. Tap any stage for what's actually happening there, not just its code name.</p>
+  <figure class="archfig">
+    <svg viewBox="0 0 924 200" role="img" aria-label="SD 1.5's UNet drawn as a funnel: resolution shrinks from 64 to 8 through four down blocks, stays at 8 through the bottleneck mid block, then grows back to 64 through four up blocks and conv_out." id="archsvg">
+      <text x="72" y="14" class="archcap" text-anchor="middle">IN</text>
+      <g class="archnode" data-stage="in" tabindex="0" role="button" aria-label="conv_in"><rect x="40" y="58" width="64" height="72"></rect></g>
+      <text x="72" y="148" class="archcap" text-anchor="middle">64²</text>
+      <text x="72" y="160" class="archcap" text-anchor="middle">320ch</text>
+      <text x="111" y="95" class="archarrow">&gt;</text>
+
+      <text x="150" y="14" class="archcap" text-anchor="middle">D1</text>
+      <g class="archnode" data-stage="d1" tabindex="0" role="button" aria-label="down block 1"><rect x="118" y="74" width="64" height="56"></rect></g>
+      <text x="150" y="148" class="archcap" text-anchor="middle">32²</text>
+      <text x="150" y="160" class="archcap" text-anchor="middle">320ch</text>
+      <text x="189" y="95" class="archarrow">&gt;</text>
+
+      <text x="228" y="14" class="archcap" text-anchor="middle">D2</text>
+      <g class="archnode" data-stage="d2" tabindex="0" role="button" aria-label="down block 2"><rect x="196" y="90" width="64" height="40"></rect></g>
+      <text x="228" y="148" class="archcap" text-anchor="middle">16²</text>
+      <text x="228" y="160" class="archcap" text-anchor="middle">640ch</text>
+      <text x="267" y="95" class="archarrow">&gt;</text>
+
+      <text x="306" y="14" class="archcap" text-anchor="middle">D3</text>
+      <g class="archnode" data-stage="d3" tabindex="0" role="button" aria-label="down block 3"><rect x="274" y="104" width="64" height="26"></rect></g>
+      <text x="306" y="148" class="archcap" text-anchor="middle">8²</text>
+      <text x="306" y="160" class="archcap" text-anchor="middle">1280ch</text>
+      <text x="345" y="95" class="archarrow">&gt;</text>
+
+      <text x="384" y="14" class="archcap" text-anchor="middle">D4</text>
+      <g class="archnode" data-stage="d4" tabindex="0" role="button" aria-label="down block 4"><rect x="352" y="104" width="64" height="26"></rect></g>
+      <text x="384" y="148" class="archcap" text-anchor="middle">8²</text>
+      <text x="384" y="160" class="archcap" text-anchor="middle">1280ch</text>
+      <text x="423" y="95" class="archarrow">&gt;</text>
+
+      <text x="462" y="14" class="archcap" text-anchor="middle">MID</text>
+      <g class="archnode mid" data-stage="mid" tabindex="0" role="button" aria-label="mid block, the bottleneck"><rect x="430" y="104" width="64" height="26"></rect></g>
+      <text x="462" y="148" class="archcap" text-anchor="middle">8²</text>
+      <text x="462" y="160" class="archcap" text-anchor="middle">1280ch</text>
+      <text x="501" y="95" class="archarrow">&gt;</text>
+
+      <text x="540" y="14" class="archcap" text-anchor="middle">U1</text>
+      <g class="archnode" data-stage="u1" tabindex="0" role="button" aria-label="up block 1"><rect x="508" y="90" width="64" height="40"></rect></g>
+      <text x="540" y="148" class="archcap" text-anchor="middle">16²</text>
+      <text x="540" y="160" class="archcap" text-anchor="middle">1280ch</text>
+      <text x="579" y="95" class="archarrow">&gt;</text>
+
+      <text x="618" y="14" class="archcap" text-anchor="middle">U2</text>
+      <g class="archnode" data-stage="u2" tabindex="0" role="button" aria-label="up block 2"><rect x="586" y="74" width="64" height="56"></rect></g>
+      <text x="618" y="148" class="archcap" text-anchor="middle">32²</text>
+      <text x="618" y="160" class="archcap" text-anchor="middle">640ch</text>
+      <text x="657" y="95" class="archarrow">&gt;</text>
+
+      <text x="696" y="14" class="archcap" text-anchor="middle">U3</text>
+      <g class="archnode" data-stage="u3" tabindex="0" role="button" aria-label="up block 3"><rect x="664" y="58" width="64" height="72"></rect></g>
+      <text x="696" y="148" class="archcap" text-anchor="middle">64²</text>
+      <text x="696" y="160" class="archcap" text-anchor="middle">320ch</text>
+      <text x="735" y="95" class="archarrow">&gt;</text>
+
+      <text x="774" y="14" class="archcap" text-anchor="middle">U4</text>
+      <g class="archnode" data-stage="u4" tabindex="0" role="button" aria-label="up block 4"><rect x="742" y="58" width="64" height="72"></rect></g>
+      <text x="774" y="148" class="archcap" text-anchor="middle">64²</text>
+      <text x="774" y="160" class="archcap" text-anchor="middle">320ch</text>
+      <text x="813" y="95" class="archarrow">&gt;</text>
+
+      <text x="852" y="14" class="archcap" text-anchor="middle">OUT</text>
+      <g class="archnode" data-stage="out" tabindex="0" role="button" aria-label="conv_out"><rect x="820" y="58" width="64" height="72"></rect></g>
+      <text x="852" y="148" class="archcap" text-anchor="middle">64²</text>
+      <text x="852" y="160" class="archcap" text-anchor="middle">4ch</text>
+
+      <g class="archnode emb" data-stage="emb" tabindex="0" role="button" aria-label="timestep embedding"><rect x="40" y="178" width="200" height="18"></rect><text x="140" y="191" class="archcap" text-anchor="middle">emb(t), read by every block</text></g>
+    </svg>
+  </figure>
+  <figcaption class="fine" style="margin-top:-6px">Channel counts and the down/up block split (3 cross-attention blocks, 1 plain) are SD 1.5's standard, widely-documented UNet shape; not independently re-fetched from a live config in this sandbox.</figcaption>
+  <div class="card archpanel" id="archinsp">
+    <h3 id="archinsp-t"></h3>
+    <p id="archinsp-d"></p>
+  </div>
 </section>
 
 <svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="9 7 12 6 8 6 11 6" fill="none"/></svg>
@@ -795,6 +895,33 @@ function goLine(n){
 }
 document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("[data-ln-go]");if(a){e.preventDefault();e.stopPropagation();goLine(a.dataset.lnGo)}},true);
 document.addEventListener("keydown",function(e){var a=e.target.closest&&e.target.closest("[data-ln-go]");if(a&&(e.key==="Enter"||e.key===" ")){e.preventDefault();goLine(a.dataset.lnGo)}});
+
+/* ---------------- architecture funnel ---------------- */
+var ARCHINT={
+ in:{t:"conv_in, line 1108",d:"One convolution, no resolution change: maps the latent's 4 channels up to the network's working width, 320 for SD 1.5. Purely a width change; nothing here has denoised anything yet."},
+ d1:{t:"Down block 1, full resolution",d:"Still the latent's full 64x64 grid, only 320 channels. Every position's receptive field is small here, so these resnets learn local, low-level structure, the kind of thing an early layer in any CNN learns: edges, textures, small patterns. This is the classic move going back to the earliest CNNs for images: trade grid size for channel depth one step at a time, rather than all at once."},
+ d2:{t:"Down block 2, half the grid again",d:"16x16 after this block, 640 channels. A smaller grid means each remaining position already summarizes a bigger patch of the original image; doubling the channel count gives the network room to represent the richer, more combined patterns that patch can now contain."},
+ d3:{t:"Down block 3, deep into the compression",d:"8x8 after this block, 1280 channels. A single grid cell here already corresponds to an 8x8-pixel region of the 64x64 latent grid it started from, which is itself an 8x8-pixel region of the 512x512 image. Spatial precision is mostly gone by this point; what is left is which large-scale pattern is present, not exactly where."},
+ d4:{t:"Down block 4, same resolution, no further downsampling",d:"Still 8x8, 1280 channels: SD 1.5's config stops downsampling here (this block has no downsample layer at all). One more resnet pass at the smallest grid before handing off to the bottleneck."},
+ mid:{t:"Mid block, the bottleneck",d:"The most compressed, most global view the network ever computes. An 8x8 grid is small enough that one self-attention call can relate any two positions in the entire grid directly, in a single layer; this is the one point in the whole architecture where information from opposite corners of the image can mix in one step, rather than having to propagate there through many convolutions."},
+ u1:{t:"Up block 1, resolution starts returning",d:"16x16 after this block: the mirror image of down block 4, upsampling instead of downsampling. From here on, each up block also receives a skip connection, the matching tensor down_block_res_samples saved on the way down, concatenated back in before this block's own resnets run."},
+ u2:{t:"Up block 2",d:"32x32 after this block, 640 channels: the skip connection from down block 2 rejoins here, at the same resolution it was saved at, reinjecting detail the down path discarded two steps ago."},
+ u3:{t:"Up block 3",d:"64x64 after this block, back to the latent's original grid size, 320 channels: the skip connection from down block 1 rejoins here, carrying back the most local, fine-grained detail the network ever computed, at the resolution where it matters most."},
+ u4:{t:"Up block 4, no further upsampling",d:"Already at 64x64; this block has no upsample layer (it is the last one, matching down block 4 having no downsample layer). One more resnet pass, still at 320 channels, before conv_out."},
+ out:{t:"conv_out",d:"One more convolution brings 320 channels back down to the latent's own 4, the exact shape sample started with. Everything between conv_in and here was reshaping and refining; this undoes only the channel-count change conv_in made, nothing spatial."},
+ emb:{t:"emb(t), the timestep embedding",d:"The same mechanism as a Transformer's positional encoding, repurposed: instead of telling a layer where in a sequence a token sits, it tells every resnet block, at every resolution shown above, how far along the noise-to-image trajectory this call is. Computed once per forward call (derivation 3) and handed unchanged into every one of the 11 stages above, which is why it is drawn separately rather than as a 12th stage in the funnel."}
+};
+function archShow(stage){
+  var d=ARCHINT[stage];if(!d)return;
+  document.getElementById("archinsp-t").textContent=d.t;
+  document.getElementById("archinsp-d").textContent=d.d;
+  document.querySelectorAll(".archnode").forEach(function(n){n.classList.toggle("active",n.dataset.stage===stage)});
+}
+document.querySelectorAll(".archnode").forEach(function(n){
+  n.addEventListener("click",function(){archShow(n.dataset.stage)});
+  n.addEventListener("keydown",function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();archShow(n.dataset.stage)}});
+});
+archShow("in");
 
 /* ---------------- go ---------------- */
 refreshDynamic();applyLight();paint();
