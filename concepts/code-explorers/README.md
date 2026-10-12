@@ -14,6 +14,7 @@ Open a page directly in a browser, or view it live as a Claude Artifact.
 | `unet_forward.html` | The UNet forward pass (skim), `UNet2DConditionModel.forward` | [`unet_2d_condition.py` L979-L1235](https://github.com/huggingface/diffusers/blob/v0.40.0/src/diffusers/models/unets/unet_2d_condition.py#L979-L1235) | [live version](https://claude.ai/artifact/CnNTamggo7MCSHNrmoAAzh) |
 | `encode_prompt.html` | Prompt encoding (skim), `StableDiffusionPipeline.encode_prompt` | [`pipeline_stable_diffusion.py` L332-L512](https://github.com/huggingface/diffusers/blob/v0.40.0/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py#L332-L512) | [live version](https://claude.ai/artifact/1D5aAZmqgfV1NsAxp9aUX6) |
 | `processor_registry.html` | The attention processor registry, `AttentionMixin.attn_processors` / `set_attn_processor` | [`attention.py` L41-L96](https://github.com/huggingface/diffusers/blob/v0.40.0/src/diffusers/models/attention.py#L41-L96) | [live version](https://claude.ai/artifact/VQ9xGBsEg23CXrcM119KBB) |
+| `prepare_latents.html` | Latent initialisation, `StableDiffusionPipeline.prepare_latents` | [`pipeline_stable_diffusion.py` L694-L714](https://github.com/huggingface/diffusers/blob/v0.40.0/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py#L694-L714) | [live version](https://claude.ai/artifact/PNQzNuxFspofLyXHHhFHWL) |
 
 Each page is self-contained (inline CSS/JS, MathJax from a CDN) and follows Rishav's design language (see `design-system/`).
 

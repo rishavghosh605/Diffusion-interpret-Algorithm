@@ -9,4 +9,4 @@ This runs once, before the denoising loop starts. Everything downstream (cross-a
 - **Source file in this repo:** [`concepts/code-explorers/encode_prompt.html`](../../concepts/code-explorers/encode_prompt.html)
 - **Pinned code:** `pipeline_stable_diffusion.py` lines 332–512, `StableDiffusionPipeline.encode_prompt` (diffusers v0.40.0)
 
-Next: [02 — The denoising loop](../02-denoising-loop/README.md), where `prompt_embeds` gets used for the first time.
+Next: [02 — Latent initialisation](../02-latent-initialisation/README.md), which draws the starting point `prompt_embeds` eventually conditions.

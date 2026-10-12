@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>prepare_latents: drawing the first noise (flowchart version)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;1,7..72,400&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+window.MathJax={
+  tex:{packages:{"[+]":["html"]},inlineMath:[["\\(","\\)"]],displayMath:[["\\[","\\]"]]},
+  svg:{fontCache:"global"},
+  options:{enableMenu:false},
+  startup:{typeset:false}
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg-full.js"></script>
+<style>
+:root{
+  --paper:#F4EEE4; --ground:#F4EEE4; --card:#FFFBF5; --zone:rgba(255,251,245,.6);
+  --ink:#2B221C; --ink-soft:#4A3D32; --muted:#6A5A4C; --on-ink:#F6EFE3;
+  --line:rgba(43,34,28,.11); --line-strong:rgba(43,34,28,.22);
+  --flame:#C98A1E; --flame-soft:rgba(201,138,30,.16); --flame-ink:#6B4A08;
+  --code-bg:#FFFBF5; --glow:rgba(255,236,200,.55); --dusk:rgba(224,120,74,0);
+  --shadow-lift:0 14px 30px #3424142e,0 2px 6px #34241414;
+  --serif:"Literata","Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --sans:"Figtree",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#1A1512; --ground:#1A1512; --card:#241D19; --zone:rgba(239,229,214,.035);
+    --ink:#EFE5D6; --ink-soft:#D8CAB7; --muted:#AE9E8B; --on-ink:#1A1512;
+    --line:rgba(239,229,214,.09); --line-strong:rgba(239,229,214,.22);
+    --flame:#E9A23B; --flame-soft:rgba(233,162,59,.18); --flame-ink:#F0C77A;
+    --code-bg:#241D19; --shadow-lift:0 14px 30px #00000073;
+  }
+}
+:root[data-theme="dark"],:root[data-scheme="night"]{
+  --paper:#1A1512; --card:#241D19; --zone:rgba(239,229,214,.035);
+  --ink:#EFE5D6; --ink-soft:#D8CAB7; --muted:#AE9E8B; --on-ink:#1A1512;
+  --line:rgba(239,229,214,.09); --line-strong:rgba(239,229,214,.22);
+  --flame:#E9A23B; --flame-soft:rgba(233,162,59,.18); --flame-ink:#F0C77A;
+  --code-bg:#241D19; --shadow-lift:0 14px 30px #00000073;
+}
+:root[data-scheme="day"]{
+  --paper:#F4EEE4; --card:#FFFBF5; --zone:rgba(255,251,245,.6);
+  --ink:#2B221C; --ink-soft:#4A3D32; --muted:#6A5A4C; --on-ink:#F6EFE3;
+  --line:rgba(43,34,28,.11); --line-strong:rgba(43,34,28,.22);
+  --flame:#C98A1E; --flame-soft:rgba(201,138,30,.16); --flame-ink:#6B4A08;
+  --code-bg:#FFFBF5; --shadow-lift:0 14px 30px #3424142e,0 2px 6px #34241414;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px);background:var(--ground)}
+body{margin:0;color:var(--ink);background:var(--ground);font:15px/1.6 var(--serif);min-height:100vh;position:relative}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;background:var(--light,none);z-index:0}
+.wrap{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:40px 24px 64px}
+a{color:inherit;text-decoration-color:var(--line-strong);text-underline-offset:3px}
+a:hover{text-decoration-color:var(--flame)}
+:focus-visible{outline:2px solid var(--flame);outline-offset:2px;border-radius:4px}
+.sans{font-family:var(--sans)}
+code,.mono{font-family:var(--mono);font-size:.9em}
+
+/* header */
+h1{font:500 42px/1.1 var(--serif);letter-spacing:-.012em;margin:0 0 10px}
+.lede{font-size:17px;line-height:1.6;color:var(--ink-soft);max-width:62ch;margin:0 0 10px}
+.meta{font:500 12.5px/1.5 var(--sans);color:var(--muted);margin:0}
+h2{font:600 14.5px/20px var(--sans);margin:0 0 4px;color:var(--ink)}
+.hint{font:400 13.5px/20px var(--sans);color:var(--muted);margin:0 0 14px;max-width:70ch}
+
+/* stitch divider */
+.stitch{display:block;width:100%;height:10px;margin:44px 0 30px;color:var(--line-strong)}
+
+/* scheduler switch */
+.bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;margin:28px 0 14px}
+.switch{display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:var(--zone);border:1px solid var(--line)}
+.switch button{font:500 14px/20px var(--sans);border:0;background:transparent;color:var(--muted);padding:5px 14px;border-radius:999px;cursor:pointer;transition:background .18s,color .18s}
+.switch button[aria-pressed="true"]{background:var(--ink);color:var(--on-ink)}
+.switch-label{font:500 12px/16px var(--sans);color:var(--muted);margin-right:8px}
+
+/* main grid */
+.grid{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(0,1fr);gap:16px;align-items:start}
+.side{display:grid;gap:16px;position:sticky;top:calc(16px + env(safe-area-inset-top,0px))}
+@media (max-width:900px){.grid{grid-template-columns:1fr}.side{position:static}}
+.zone{background:var(--zone);border-radius:16px;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px}
+.zone-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:0 0 10px}
+.zone-h span{font:500 12px/16px var(--sans);color:var(--muted)}
+
+/* code */
+.code{padding:10px 0;font:12.5px/1.75 var(--mono);color:var(--ink);background:var(--code-bg)}
+.ln{display:grid;grid-template-columns:44px minmax(0,1fr);padding-right:12px;transition:background .18s}
+.ln .n{color:var(--muted);text-align:right;padding-right:14px;user-select:none;opacity:.8}
+.ln .t{white-space:pre-wrap;word-break:break-word}
+.ln.lit{background:var(--flame-soft)}
+.kw{color:var(--muted);font-weight:600}
+.str,.com{color:var(--muted)}
+.com{font-style:italic}
+.tok{cursor:pointer;border-radius:4px;padding:0 1px;background-image:linear-gradient(currentColor,currentColor);background-size:100% 1px;background-repeat:no-repeat;background-position:0 100%;transition:background-color .15s,color .15s}
+.tok.eng{background-image:linear-gradient(var(--line-strong),var(--line-strong))}
+.tok.on{background-color:var(--flame-soft);color:var(--flame-ink);background-image:none}
+.tok.pin{background-color:var(--flame-soft);color:var(--flame-ink);background-image:none;box-shadow:inset 0 -2px 0 var(--flame)}
+
+/* math rows */
+.mrows{padding:6px 14px}
+.mrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:8px 6px;border-radius:8px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .18s}
+.mrow:last-child{border-bottom:0}
+.mrow.lit{background:var(--flame-soft)}
+.mrow .where{font:500 12px/16px var(--sans);color:var(--muted);white-space:nowrap}
+.mrow .eq{overflow-x:auto;overflow-y:hidden}
+.sigcap{font:400 13.5px/20px var(--sans);color:var(--muted);padding:2px 20px 12px}
+mjx-container{color:var(--ink)}
+mjx-container[display="true"]{margin:.3em 0 !important;text-align:left !important}
+mjx-container [class^="s-"],mjx-container [class*=" s-"]{cursor:pointer}
+mjx-container g.on{fill:var(--flame-ink)}
+mjx-container g.on use,mjx-container g.on path,mjx-container g.on rect{fill:var(--flame-ink);stroke:var(--flame);stroke-width:26px}
+
+/* inspector */
+.insp{padding:16px 18px 18px}
+.insp .panel{display:none}
+.insp .panel.show{display:block}
+.ih{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;margin-bottom:2px}
+.ih .cn{font:600 15px/1.4 var(--mono);color:var(--ink);word-break:break-word}
+.ih .arrow{font:500 13px var(--sans);color:var(--muted)}
+.kind{font:500 12px/16px var(--sans);color:var(--muted);margin:0 0 12px}
+.f{margin-top:12px}
+.f h3{font:600 13px/18px var(--sans);color:var(--muted);margin:0 0 3px}
+.f p{margin:0;font-size:15px;line-height:1.55}
+.looks{font:12.5px/1.6 var(--mono);background:var(--zone);border:1px solid var(--line);border-radius:8px;padding:8px 10px;white-space:pre-wrap}
+.viz{display:flex;gap:12px;align-items:center;margin-top:8px}
+.viz canvas{width:88px;height:88px;image-rendering:pixelated;border-radius:6px;border:1px solid var(--line);flex:none}
+.viz span{font:400 13px/18px var(--sans);color:var(--muted)}
+.note{margin-top:12px;padding:8px 12px;border-radius:8px;background:var(--flame-soft);color:var(--flame-ink);font:400 13.5px/20px var(--sans)}
+.none{font-style:italic;color:var(--muted)}
+
+/* algorithm */
+.algo{padding:6px 0}
+.arow{display:grid;grid-template-columns:28px minmax(0,1.2fr) minmax(0,1fr);gap:4px 14px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line)}
+.arow:last-child{border-bottom:0}
+.arow .k{font:500 12px var(--sans);color:var(--muted)}
+.arow .eq{overflow-x:auto;overflow-y:hidden}
+.arow .map{font:400 13.5px/20px var(--sans);color:var(--ink-soft)}
+.arow.here{background:var(--flame-soft)}
+.arow.here .map{color:var(--flame-ink);font-weight:500}
+@media (max-width:640px){.arow{grid-template-columns:24px minmax(0,1fr)}.arow .map{grid-column:2}}
+.fine{font:400 13.5px/20px var(--sans);color:var(--muted);margin:12px 0 0;max-width:72ch}
+
+/* derivations */
+details{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:10px}
+summary{list-style:none;cursor:pointer;padding:14px 18px;display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:baseline}
+summary::-webkit-details-marker{display:none}
+summary .num{font:500 20px/1 var(--serif);color:var(--flame-ink)}
+summary .q{font:500 17px/1.45 var(--serif)}
+summary .open{font:500 12px/16px var(--sans);color:var(--muted);white-space:nowrap}
+details[open] summary .open::after{content:"Close"}
+details:not([open]) summary .open::after{content:"Try it on paper, then open"}
+.dbody{padding:0 18px 18px 56px}
+@media (max-width:640px){.dbody{padding:0 14px 16px}summary{grid-template-columns:24px minmax(0,1fr)}summary .open{grid-column:2}}
+ol.steps{list-style:none;counter-reset:s;padding:0;margin:0}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:26px minmax(0,1fr);gap:0 8px;padding:7px 0;border-bottom:1px dashed var(--line)}
+ol.steps li::before{content:counter(s);font:500 12.5px/2 var(--sans);color:var(--muted)}
+ol.steps .eq{overflow-x:auto;overflow-y:hidden}
+ol.steps .why{grid-column:2;font:400 13.5px/19px var(--sans);color:var(--muted)}
+.answer{margin-top:14px;padding:12px 14px;border-radius:10px;background:var(--zone);border:1px solid var(--line)}
+.answer h3{font:600 13px/18px var(--sans);color:var(--muted);margin:0 0 4px}
+.answer p{margin:0 0 4px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.chip{font:500 12px/16px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:5px 11px;border-radius:999px;cursor:pointer}
+.chip:hover{border-color:var(--flame)}
+
+/* project + whole */
+.project p{max-width:66ch;margin:0 0 10px;font-size:16px}
+.whole{overflow-x:auto;padding:8px 4px}
+.prov{font:400 12.5px/19px var(--sans);color:var(--muted);max-width:80ch}
+.prov p{margin:0 0 6px}
+.closer{display:none}
+@media (max-width:900px){
+  .inspzone{position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));max-height:52vh;overflow:auto;z-index:5;background:var(--card);box-shadow:var(--shadow-lift);border-radius:22px;padding:8px;transform:translateY(115%);transition:transform .25s ease;visibility:hidden}
+  .inspzone.open{transform:none;visibility:visible}
+  .inspzone .card{border:0}
+  .closer{display:block;margin:4px 8px 0 auto;font:500 13px/18px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:4px 12px;border-radius:999px;cursor:pointer}
+  .wrap{padding-bottom:120px}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none !important}}
+</style>
+<style>
+/* caller bar */
+.callbar{margin-top:26px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;padding:12px 16px;border-radius:16px;background:var(--zone)}
+.callbar p{margin:0;font-size:15.5px;max-width:64ch}
+.openflow{font:500 14px/20px var(--sans);border:0;background:var(--ink);color:var(--on-ink);padding:7px 16px;border-radius:999px;cursor:pointer}
+.flowbtn{margin-top:8px;font:500 13px/18px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:5px 12px;border-radius:999px;cursor:pointer}
+.flowbtn:hover{border-color:var(--flame)}
+
+/* flowchart dialog */
+dialog.fc{border:0;padding:0;border-radius:22px;background:var(--card);color:var(--ink);box-shadow:var(--shadow-lift);width:min(760px,calc(100vw - 24px));max-height:calc(100vh - 32px);overflow:hidden}
+dialog.fc::backdrop{background:rgba(26,21,18,.42)}
+dialog.fc[open]{animation:fcin .2s ease}
+@keyframes fcin{from{opacity:0;transform:translateY(8px) scale(.99)}to{opacity:1;transform:none}}
+.fc-top{position:sticky;top:0;z-index:3;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:18px 20px 12px;background:var(--card);border-bottom:1px solid var(--line)}
+.fc-top h2{font:500 21px/1.3 var(--serif);margin:0}
+.fc-top p{margin:4px 0 0;font:400 13.5px/20px var(--sans);color:var(--muted)}
+.fc-top button{flex:none;font:500 13px/18px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:5px 12px;border-radius:999px;cursor:pointer}
+.fc-body{overflow:auto;max-height:calc(100vh - 150px);padding:18px 20px 26px}
+.fc-list{position:relative;display:flex;flex-direction:column;align-items:stretch;max-width:560px;margin:0 auto}
+.fnode{position:relative;background:var(--card);border:1px solid var(--line-strong);border-radius:10px;padding:9px 12px;cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%;transition:opacity .2s,border-color .2s,background .2s}
+.fnode:hover{border-color:var(--flame)}
+.fnode .ft{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.fnode .ft b{font:600 14px/19px var(--sans)}
+.fnode .ft span{font:500 11.5px/15px var(--sans);color:var(--muted);white-space:nowrap}
+.fnode .fd{display:block;font:400 14px/1.5 var(--serif);color:var(--ink-soft);margin-top:3px}
+.fnode .fmore{display:none;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);font:400 13px/19px var(--sans);color:var(--ink-soft)}
+.fnode.expanded .fmore{display:block}
+.fnode .fmore b{font-weight:600;color:var(--ink)}
+.fnode .hops{display:none;margin-top:8px}
+.fnode .hop{display:grid;grid-template-columns:22px minmax(0,1fr);gap:2px 8px;align-items:start;padding:5px 0;border-top:1px dashed var(--line)}
+.fnode .hop i{font:600 11.5px/20px var(--sans);font-style:normal;text-align:center;border-radius:999px;background:var(--flame-soft);color:var(--flame-ink);width:20px;height:20px}
+.fnode .hop code{display:block;font:12px/1.5 var(--mono);color:var(--ink);word-break:break-word}
+.fnode .hop span{grid-column:2;font:400 12.5px/17px var(--sans);color:var(--ink-soft)}
+.fc-list.tracing .fnode{opacity:.42}
+.fc-list.tracing .fnode.lit{opacity:1;border-color:var(--flame);background:var(--card)}
+.fc-list.tracing .fnode.lit .hops{display:block}
+.fnode.me{background:var(--flame-soft);border-color:transparent}
+.fc-list.tracing .fnode.me:not(.lit){background:var(--flame-soft)}
+.fconn{align-self:center;width:1.5px;height:20px;background:var(--line-strong);position:relative;flex:none}
+.fconn::after{content:"";position:absolute;left:50%;bottom:-1px;width:7px;height:7px;border-right:1.5px solid var(--line-strong);border-bottom:1.5px solid var(--line-strong);transform:translateX(-50%) rotate(45deg)}
+.fgroup{position:relative;border:1.5px solid var(--line-strong);border-radius:16px;padding:10px 10px 12px;background:var(--zone);display:flex;flex-direction:column}
+.fgroup.me{border-color:var(--flame);background:var(--flame-soft)}
+.fgroup > .fnode.head{margin-bottom:10px}
+.fgroup .kids{display:flex;flex-direction:column;margin:0 0 0 18px}
+.fgroup .kids .fnode{padding:7px 10px}
+.fgroup .kids .fconn{height:14px}
+.loopback{position:absolute;right:-17px;top:62px;bottom:28px;width:14px;border:1.5px dashed var(--muted);border-left:0;border-radius:0 12px 12px 0;opacity:.8}
+.loopback span{position:absolute;right:-6px;top:50%;transform:translate(100%,-50%);font:600 11.5px/15px var(--sans);color:var(--muted);white-space:nowrap}
+.fc-legend{font:400 13px/19px var(--sans);color:var(--muted);max-width:560px;margin:0 auto 14px}
+@media (max-width:640px){.fgroup .kids{margin-left:8px}.loopback{display:none}.fc-body{padding:14px 12px 22px}}
+@media (prefers-reduced-motion: reduce){dialog.fc[open]{animation:none}}
+
+/* glossary + notation */
+.glh{font:600 14.5px/20px var(--sans);margin:22px 0 2px}
+.glsub{font:400 13.5px/20px var(--sans);color:var(--muted);margin:0 0 8px;max-width:70ch}
+dl.terms dt.flash,dl.terms dt.flash + dd{background:var(--flame-soft)}
+dl.terms dt,dl.terms dd{transition:background .4s}
+.gl{color:inherit;text-decoration:underline dotted var(--muted);text-underline-offset:3px;cursor:pointer}
+.gl:hover{text-decoration-color:var(--flame)}
+dl.terms{display:grid;grid-template-columns:minmax(150px,220px) minmax(0,1fr);gap:0;margin:10px 0 0;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+dl.terms dt,dl.terms dd{margin:0;padding:10px 14px;border-bottom:1px solid var(--line)}
+dl.terms dt{font:600 13.5px/19px var(--sans)}
+dl.terms dd{font-size:15px}
+dl.terms dt:last-of-type,dl.terms dd:last-of-type{border-bottom:0}
+@media (max-width:640px){dl.terms{grid-template-columns:1fr}dl.terms dt{border-bottom:0;padding-bottom:0}}
+.ntable{overflow-x:auto}
+.ntable table{border-collapse:collapse;width:100%;min-width:620px;font-size:14.5px}
+.ntable th,.ntable td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--line)}
+.ntable th{font:600 12.5px/17px var(--sans);color:var(--muted)}
+.ntable tr:last-child td{border-bottom:0}
+.ntable td:first-child{font:500 13.5px/19px var(--sans)}
+.eqref{font:500 11.5px/15px var(--sans);color:var(--muted);display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Drawing the first noise</h1>
+  <p class="lede"><code>prepare_latents</code> draws \(x_T\), the starting point of the sampling algorithm. The denoising loop then spends fifty steps turning it into an image.</p>
+  <p class="meta">Stage B of your <a href="https://claude.ai/artifact/MnpGyn4QjAEuY82bKTgBTF" target="_blank" rel="noopener">SD 1.5 X-Ray</a>, latent initialisation. diffusers v0.40.0, <a href="https://github.com/huggingface/diffusers/blob/v0.40.0/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py#L694-L714" target="_blank" rel="noopener">pipeline_stable_diffusion.py lines 694 to 714</a>. Notation follows the survey by Fuest et al. (2024).</p>
+</header>
+
+<div class="callbar">
+  <p>Called once by <code>__call__</code>, at step 5 (line 999). The flowchart shows what comes before it, what comes after, and why it sits there.</p>
+  <button class="openflow" id="openflow">Open the flowchart</button>
+</div>
+
+<div class="bar">
+  <p class="hint" style="margin:0">Hover or tap a name in the code, or a symbol in the math. Its partner lights up on the other side.</p>
+  <div><span class="switch-label">Scheduler</span><span class="switch" role="group" aria-label="Scheduler">
+    <button data-s="pndm" aria-pressed="true">PNDM, the default</button>
+    <button data-s="euler" aria-pressed="false">Euler</button>
+  </span></div>
+</div>
+
+<div class="grid">
+  <div class="zone">
+    <div class="zone-h"><h2>The code</h2><span>as it is at v0.40.0</span></div>
+    <div class="card code" id="code"></div>
+  </div>
+  <div class="side">
+    <div class="zone">
+      <div class="zone-h"><h2>The same lines, in math</h2><span>tap a row to see its lines</span></div>
+      <div class="card">
+        <div class="mrows" id="mrows"></div>
+        <div class="sigcap" id="sigcap"></div>
+      </div>
+    </div>
+    <div class="zone inspzone" id="inspzone">
+      <button class="closer" id="closer" aria-label="Close details">Close</button>
+      <div class="card insp" id="insp" aria-live="polite"></div>
+    </div>
+  </div>
+</div>
+
+<dialog class="fc" id="fc" aria-labelledby="fctitle">
+  <div class="fc-top"><div><h2 id="fctitle">How __call__ runs</h2><p id="fchint"></p></div><button id="fcclose">Close</button></div>
+  <div class="fc-body"><p class="fc-legend" id="fclegend"></p><div class="fc-list" id="fclist"></div></div>
+</dialog>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="9 6 12 6 8 7 11 6" fill="none"/></svg>
+
+<section>
+  <h2>Where it sits in the sampling algorithm</h2>
+  <p class="hint">Ho et al. (2020), Algorithm 2, written in the survey's notation. The denoising loop is this algorithm in code.</p>
+  <div class="card algo" id="algo"></div>
+  <p class="fine">Lines 4 and 5 are exactly what DDPMScheduler does. PNDM (the default), DDIM and Euler keep lines 1 to 3 and replace lines 4 and 5 with their own update, computed from the same \(\epsilon_\theta\).</p>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="11 6 8 6 12 7 9 6" fill="none"/></svg>
+
+<section>
+  <h2>Derive it on paper</h2>
+  <p class="hint">The first two are this stage's checkpoint questions from the X-Ray. The third goes one level down, to the derivation everything else rests on.</p>
+  <div id="ders"></div>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="8 6 11 7 9 6 12 6" fill="none"/></svg>
+
+<section class="project">
+  <h2>What this means for your project</h2>
+  <p style="margin-top:8px">Nothing in these twenty lines reads the prompt. \(x_T\) is fixed by the seed, the image size and the scheduler, and nothing else.</p>
+  <p>So with a fixed generator, two runs that differ only in <code>prompt_embeds</code> start from the identical \(x_T\). Any difference between the images comes from the conditioning alone, which is what makes swapping the conditioning a clean experiment. Classifier-free guidance doubles the batch later, at line 1037 inside the denoising loop, by copying this same tensor.</p>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="10 6 9 7 12 6 8 6" fill="none"/></svg>
+
+<section>
+  <h2>Seen whole</h2>
+  <p class="hint">Training data on the left, your image on the right. This function is the middle term.</p>
+  <div class="card whole">\[\underbrace{x\ \xrightarrow{\ 0.18215\,\mathcal E\ }\ z_0}_{\text{training data}}\ \xrightarrow{\ p(x_t\mid x_0),\ t\,\to\,T\ }\ \underbrace{x_T\sim\pi(x_T)}_{\texttt{prepare\_latents}}\ \xrightarrow{\ \text{denoising loop},\ \times 50\ }\ z_0\ \xrightarrow{\ \mathcal D(\cdot\,/\,0.18215)\ }\ \hat x\]</div>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="9 7 12 6 8 6 11 6" fill="none"/></svg>
+
+<section>
+  <h2>Terms on this page</h2>
+  <p class="hint">Each term means exactly one thing. Underlined terms elsewhere on the page link here.</p>
+  <h3 class="glh">Code terms</h3><p class="glsub">Names for places in the code. Each points at exactly one location.</p>
+  <dl class="terms">
+    <dt id="gl-call">__call__</dt><dd><code>StableDiffusionPipeline.__call__</code>, line 780. What runs when you write <code>pipe(prompt)</code>. Its code comments number its steps 0 to 7.</dd>
+    <dt id="gl-loop">Denoising loop</dt><dd>Step 7 of <code>__call__</code>, lines 1028 to 1082: <code>for i, t in enumerate(timesteps)</code>. Runs <code>num_inference_steps</code> times, 50 by default.</dd>
+    <dt id="gl-unetfwd">UNet forward</dt><dd><code>self.unet(...)</code> at line 1042, inside the denoising loop. Returns \(\epsilon_\theta(x_t,t)\).</dd>
+    <dt id="gl-scheduler">Scheduler</dt><dd>The object at <code>pipe.scheduler</code>, a PNDMScheduler by default. It owns the timesteps, <code>init_noise_sigma</code>, <code>scale_model_input</code> and <code>step</code>. The schedulers themselves are listed below.</dd>
+    <dt id="gl-schedstep">Scheduler step</dt><dd><code>self.scheduler.step(...)</code> at line 1062, inside the denoising loop. Turns \(x_t\) into \(x_{t-1}\).</dd>
+    <dt id="gl-sampalg">Sampling algorithm</dt><dd>The reverse process written as a procedure: Ho et al., Algorithm 2. The denoising loop implements it.</dd>
+    <dt id="gl-latents"><code>latents</code> and \(x_T\)</dt><dd><code>latents</code> is the variable; \(x_T\) is the math. The variable holds \(x_T\) from line 999, then \(x_t\) during the denoising loop, then \(z_0\) when the denoising loop ends.</dd>
+    <dt id="gl-siginit">\(\sigma_{\text{init}}\)</dt><dd>This page's name for <code>scheduler.init_noise_sigma</code>. The survey has no symbol for it.</dd>
+    <dt id="gl-seed">Seed and generator</dt><dd>A seed is the integer given to <code>torch.Generator(...).manual_seed(seed)</code>. The generator turns it into a fixed stream of random numbers, so the same seed gives the same \(\epsilon\).</dd>
+  </dl>
+  <h3 class="glh">Diffusion terms</h3><p class="glsub">The ideas the math is built from.</p>
+  <dl class="terms">
+    <dt id="gl-forward">Forward process</dt><dd>Adds Gaussian noise to clean data, a little at a time, over \(T=1000\) steps. Survey Eq. 1 to 3. Used to train the UNet; <code>__call__</code> never runs it.</dd>
+    <dt id="gl-reverse">Reverse process</dt><dd>The learned way back, from noise to data: \(p_\theta(x_{t-1}\mid x_t)\), survey p. 2 and Eq. 6. The denoising loop runs it.</dd>
+    <dt id="gl-prior">Prior</dt><dd>\(\pi(x_T)\), the distribution the reverse process starts from: \(\mathcal N(0,I)\) in the survey. <code>prepare_latents</code> draws one sample of it.</dd>
+    <dt id="gl-schedule">Noise schedule</dt><dd>The \(\beta_t\): how much noise each forward step adds. SD 1.5 uses <code>scaled_linear</code>: \(\sqrt{\beta_t}\) runs evenly from \(\sqrt{0.00085}\) to \(\sqrt{0.012}\) over 1000 steps.</dd>
+    <dt id="gl-epspred">Noise prediction</dt><dd>\(\epsilon_\theta(x_t,t)\): the UNet's guess of the noise inside \(x_t\). SD 1.5 is trained to predict it, survey Eq. 7.</dd>
+    <dt id="gl-snr">SNR and terminal SNR</dt><dd>Signal-to-noise ratio, \(\bar\alpha_t/(1-\bar\alpha_t)\): how much image is left at timestep \(t\). Terminal means at \(t=T\). For SD 1.5 it is about 0.0047, not 0 (Lin et al. 2023).</dd>
+    <dt id="gl-vpve">VP and VE</dt><dd>Two ways to write the same noising (Song et al. 2021; survey Eq. 9). Variance preserving shrinks the image while adding noise, so the total stays near 1: DDPM, DDIM and PNDM work this way. Variance exploding keeps the image and lets the noise level \(\sigma\) grow: Euler and LMS work this way.</dd>
+    <dt id="gl-sigtable">σ table</dt><dd>The list of noise levels \(\sigma_t\) for the timesteps of this run. Euler and LMS build it in <code>set_timesteps</code> (step 4) and read <code>init_noise_sigma</code> from it.</dd>
+    <dt id="gl-spacing">Timestep spacing</dt><dd>How the 50 inference timesteps are picked from the 1000 training ones: <code>linspace</code> (evenly, starting at 999), <code>leading</code> or <code>trailing</code> (Lin et al. 2023, Table 2).</dd>
+  </dl>
+  <h3 class="glh">Schedulers</h3><p class="glsub">Classes in <code>diffusers/schedulers</code>. Each one turns \(\epsilon_\theta\) into the next \(x_{t-1}\) in its own way; the trained UNet is the same for all of them.</p>
+  <dl class="terms">
+    <dt id="gl-ddpm">DDPM</dt><dd>Denoising Diffusion Probabilistic Models (Ho et al. 2020). The original model and sampler, Algorithm 2 on this page. Adds fresh noise at every step and is meant for all 1000 steps. Class: <code>DDPMScheduler</code>.</dd>
+    <dt id="gl-ddim">DDIM</dt><dd>Denoising Diffusion Implicit Models (Song, Meng and Ermon 2021). Same trained UNet, but a step that can be deterministic (\(\eta=0\)) and works with about 50 steps. Class: <code>DDIMScheduler</code>. The X-Ray reads its reverse step.</dd>
+    <dt id="gl-pndm">PNDM</dt><dd>Pseudo Numerical methods for Diffusion Models (Liu et al. 2022). SD 1.5's default. Treats sampling as solving a differential equation and reuses earlier \(\epsilon_\theta\) to take better steps. SD 1.5's config sets <code>skip_prk_steps</code>, so it runs the PLMS (pseudo linear multistep) variant. VP units, so <code>init_noise_sigma</code> is 1. Class: <code>PNDMScheduler</code>.</dd>
+    <dt id="gl-euler">Euler</dt><dd>One step of Euler's method per timestep, on the differential equation written in VE units (Karras et al. 2022). <code>init_noise_sigma</code> is 14.61 on SD 1.5. Class: <code>EulerDiscreteScheduler</code>.</dd>
+    <dt id="gl-lms">LMS</dt><dd>Linear multistep: like Euler, in VE units, but combines several earlier \(\epsilon_\theta\) per step. Class: <code>LMSDiscreteScheduler</code>.</dd>
+  </dl>
+  <h3 class="glh">Models and tools</h3><p class="glsub">The other parts of Stable Diffusion that this page mentions.</p>
+  <dl class="terms">
+    <dt id="gl-ldm">Latent diffusion</dt><dd>Running diffusion on a VAE's compressed latents instead of on pixels (Rombach et al. 2022). Stable Diffusion (SD) is a latent diffusion model; SD 1.5 is the version this page reads.</dd>
+    <dt id="gl-vae">VAE</dt><dd>Variational autoencoder. An encoder \(\mathcal E\) that compresses an image and a decoder \(\mathcal D\) that restores it. SD 1.5's maps 3 × 512 × 512 to 4 × 64 × 64; latents are scaled by 0.18215.</dd>
+    <dt id="gl-unet">UNet</dt><dd>The network that predicts \(\epsilon_\theta\): <code>UNet2DConditionModel</code>, convolutions with attention layers, shaped like a U (Ronneberger et al. 2015).</dd>
+    <dt id="gl-clip">CLIP</dt><dd>The text encoder (Radford et al. 2021; SD 1.5 uses ViT-L/14's). Turns the prompt into <code>prompt_embeds</code>, 77 × 768, in step 3.</dd>
+    <dt id="gl-cfg">Classifier-free guidance (CFG)</dt><dd>Run the UNet with and without the prompt and push the result away from the unconditional one (Ho and Salimans 2021; survey Eq. 13). It is why the batch doubles at line 1037.</dd>
+    <dt id="gl-rescale">guidance_rescale</dt><dd>An optional fix for washed-out images at high guidance (Lin et al. 2023), in <code>rescale_noise_cfg</code> near the top of the pipeline file.</dd>
+    <dt id="gl-fp16">fp16</dt><dd>16-bit floating point, <code>torch.float16</code>. Half the memory of 32-bit; the usual way to run SD 1.5 on a GPU.</dd>
+    <dt id="gl-nchw">NCHW</dt><dd>The order of a PyTorch image tensor's axes: batch, channels, height, width.</dd>
+  </dl>
+</section>
+
+<svg class="stitch" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true"><path d="M0 5 H1000" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="11 6 9 6 12 7 8 6" fill="none"/></svg>
+
+<section>
+  <details>
+    <summary><span class="num">§</span><span class="q">Notation: where this page, the survey and diffusers differ</span><span class="open"></span></summary>
+    <div class="dbody ntable">
+      <table>
+        <tr><th>Item</th><th>Survey (Fuest et al. 2024)</th><th>This page</th><th>Why it matters</th></tr>
+        <tr><td>Forward kernel</td><td>\(p(x_t\mid x_{t-1})\), Eq. 1</td><td>Same</td><td>Ho et al. write \(q\) for the forward process. Same thing, different letter.</td></tr>
+        <tr><td>Prior</td><td>\(x_T\sim\pi(x_T)=\mathcal N(0,I)\), p. 2</td><td>Same, and \(\mathcal N(0,\sigma_{\text{init}}^2 I)\) for Euler</td><td>The survey states the DDPM case, where \(\sigma_{\text{init}}=1\).</td></tr>
+        <tr><td>Reverse step</td><td>\(\mathcal N(\mu_\theta(x_t,t),\Sigma_\theta)\), with \(\mu_\theta\) from Eq. 6</td><td>Same</td><td>Ho et al. write the noise as \(\sigma_t z\), which clashes with the \(\sigma\) below, so this page uses \(\Sigma_\theta\).</td></tr>
+        <tr><td>Noise level \(\sigma\)</td><td>\(\sigma(t)\), the VE noise level, Eq. 9 and 10</td><td>\(\sigma_t=\sigma(t)\) at timestep \(t\)</td><td>The survey's Eq. 12 uses \(\sigma_t\) for something else, inside classifier guidance.</td></tr>
+        <tr><td>VE state</td><td>Reuses \(x\)</td><td>\(\tilde x_t\)</td><td>Keeps the VE variable apart from DDPM's \(x_t\) in derivation 2.</td></tr>
+        <tr><td>Guidance weight</td><td>\((1+w)\,\epsilon_\theta(x_t,c)-w\,\epsilon_\theta(x_t,\phi)\), Eq. 13</td><td>Not used here</td><td>diffusers writes \(\epsilon_u+s(\epsilon_c-\epsilon_u)\) at line 1055, so <code>guidance_scale</code> \(s=1+w\). The default 7.5 is \(w=6.5\). Worth knowing before the X-Ray's CFG exercise.</td></tr>
+        <tr><td>Possible slips in the survey</td><td>Eq. 5 and Eq. 8</td><td>Not used here</td><td>Read from the PDF's text, Eq. 5's \(x_t\) coefficient has \(\sqrt{\bar\alpha_{t-1}}\) where Ho et al. have \(\sqrt{\alpha_t}\), and Eq. 8's velocity uses \(x_t\) where Salimans and Ho use \(x_0\). Check the printed version; neither affects this function.</td></tr>
+      </table>
+    </div>
+  </details>
+</section>
+
+<section class="prov" style="margin-top:28px">
+  <h2>What is checked, and how</h2>
+  <p>Code and line numbers: read from diffusers v0.40.0. Model values (scheduler betas and step offset, VAE block_out_channels and latent_channels, UNet in_channels and sample_size): read from the SD 1.5 config files on the Hub. Schedule numbers such as \(\bar\alpha_T\) and \(\sigma_{999}\): computed from that config with numpy.</p>
+  <p>Worked out from the source but not run: Euler's init_noise_sigma of 14.61. The Hub config for SD 1.5 has no timestep_spacing key, and <code>from_config</code> skips keys that were only filled by defaults, so Euler falls back to its own default, linspace, whose first timestep is 999. Print <code>pipe.scheduler.init_noise_sigma</code> once to confirm.</p>
+  <p>Papers: Fuest et al. 2024 (notation), Ho et al. 2020 (Algorithm 2), Rombach et al. 2022 (latent space), Karras et al. 2022 (the \(x_0+\sigma\epsilon\) view), Lin et al. 2023 (terminal SNR).</p>
+</section>
+
+</div>
+
+<script>
+
+(function(){
+"use strict";
+var R=String.raw;
+var sched="pndm";
+var SIG={pndm:1.0,euler:14.61};
+function sig(){return SIG[sched]}
+function sigTxt(){return sched==="pndm"?"1.0 (PNDM)":"14.61 (Euler)"}
+
+/* ---------------- tokens: code name <-> math ---------------- */
+var T={
+ prepare_latents:{name:"prepare_latents(...)",sym:R`x_T\sim p_T`,kind:"The function",syms:[],rows:["a","b","c","d"],
+  looks:function(){return "In: 8 arguments.\nOut: one tensor, float16, (1, 4, 64, 64)."},
+  math:R`<p>\(x_T\sim\pi(x_T)=\mathcal N(0,\sigma_{\text{init}}^2 I)\)</p><p>Line 1 of the sampling algorithm: draw the starting point. The survey states the prior on p. 2.</p>`,
+  flow:"Called once by __call__, at step 5, line 999. What it returns is the latents tensor that the denoising loop (step 7, lines 1028 to 1082) reads and overwrites fifty times."},
+ batch_size:{name:"batch_size",sym:"B",kind:"A number",syms:["s-B"],rows:["a"],
+  looks:function(){return "1   (1 prompt × 1 image per prompt)"},
+  math:R`<p>\(p\big(x_T^{(1)},\dots,x_T^{(B)}\big)=\prod_{b=1}^{B}\mathcal N\big(0,\sigma_{\text{init}}^2 I\big)\)</p><p>A batch is independent draws, stacked on the first axis.</p>`,
+  flow:"__call__ passes batch_size × num_images_per_prompt. It becomes the first axis of shape.",
+  note:"Classifier-free guidance doubles the batch later, at line 1037 inside the denoising loop, by copying this tensor. Not here."},
+ num_channels_latents:{name:"num_channels_latents",sym:"C",kind:"A number",syms:["s-C"],rows:["a"],
+  looks:function(){return "4"},
+  math:R`<p>\(C=4\), the channels of the VAE latent \(z\).</p>`,
+  flow:"__call__ reads unet.config.in_channels at line 998. It becomes the second axis of shape.",
+  note:"It is read from the UNet, and has to match the VAE's latent_channels, which is also 4."},
+ height:{name:"height",sym:"H",kind:"A number",syms:["s-H"],rows:["a"],
+  looks:function(){return "512"},
+  math:R`<p>Pixel height. Divided by \(f\) to get the latent grid: \(H/f=64\).</p>`,
+  flow:"__call__ step 0 defaults it to unet.config.sample_size 64 × 8 = 512. check_inputs (step 1, line 638) has already made sure it divides by 8."},
+ width:{name:"width",sym:"W",kind:"A number",syms:["s-W"],rows:["a"],
+  looks:function(){return "512"},
+  math:R`<p>Pixel width. \(W/f=64\).</p>`,
+  flow:"Same as height."},
+ vae_scale_factor:{name:"self.vae_scale_factor",sym:"f",kind:"A number from the VAE config",syms:["s-f"],rows:["a"],
+  looks:function(){return "8"},
+  math:R`<p>\(f=2^{L-1}=2^{4-1}=8\)</p><p>\(L\) is the number of VAE blocks; block_out_channels has 4 entries, so there are 3 halvings.</p>`,
+  flow:"Set in __init__ (line 296) from vae.config.block_out_channels. Used on the two lines that shrink H and W."},
+ dtype:{name:"dtype",sym:null,kind:"Engineering only",syms:[],rows:[],
+  looks:function(){return "torch.float16, when loaded with torch_dtype=torch.float16"},
+  math:"<p class='none'>No math here. This is numeric precision.</p>",
+  flow:"__call__ passes prompt_embeds.dtype (from step 3), as a stand-in for the precision the UNet and VAE run in.",
+  note:"Latents you pass yourself skip this: line 710 moves them to the device but never casts them."},
+ device:{name:"device",sym:null,kind:"Engineering only",syms:[],rows:[],
+  looks:function(){return "cuda:0"},
+  math:"<p class='none'>No math here. This is where the tensor lives.</p>",
+  flow:"__call__ sets device = self._execution_device at step 2, line 955."},
+ generator:{name:"generator",sym:"g",kind:"The source of randomness",syms:["s-g"],rows:["b"],
+  looks:function(){return "a seeded torch.Generator, a list of B of them, or None"},
+  math:R`<p>\(\epsilon=\epsilon(g)\): the seed picks which sample of \(\mathcal N(0,I)\) you get.</p>`,
+  flow:"Your argument to __call__. Also handed to the scheduler step (line 1062) through step 6, for schedulers that add fresh noise at each step, and to vae.decode (line 1085).",
+  note:"Same seed, same size and same scheduler give the same x_T, whatever the prompt."},
+ check:{name:"if isinstance(generator, list) ...",sym:null,kind:"Engineering only",syms:[],rows:[],
+  looks:function(){return "raises ValueError when a list of generators does not have length B"},
+  math:"<p class='none'>No math here. One generator per image, or the seeds would not line up.</p>",
+  flow:"Stops early, before any noise is drawn."},
+ latents_in:{name:"latents (argument)",sym:R`\epsilon`,kind:"A tensor you may supply",syms:["s-eps"],rows:["b"],
+  looks:function(){return "None by default, or your own (1, 4, 64, 64) tensor"},
+  math:R`<p>You supply \(\epsilon\) yourself instead of drawing it.</p>`,
+  flow:"Skips randn_tensor, then goes through the same scaling on line 713.",
+  note:"It is still multiplied by init_noise_sigma, so pass unit-variance noise, not noise you have already scaled."},
+ shape:{name:"shape",sym:R`(B,\,C,\,H/f,\,W/f)`,kind:"A tuple",syms:["s-B","s-C","s-H","s-W","s-f"],rows:["a"],
+  looks:function(){return "(1, 4, 512 // 8, 512 // 8)\n= (1, 4, 64, 64)"},
+  math:R`<p>\(x_T\in\mathbb R^{B\times C\times \frac Hf\times\frac Wf}\)</p><p>Batch, channels, height, width: the NCHW layout PyTorch uses for images.</p>`,
+  flow:"Built on lines 695 to 700, used only by randn_tensor."},
+ randn_tensor:{name:"randn_tensor(...)",sym:R`\epsilon\sim\mathcal N(0,I)`,kind:"A call that makes a tensor",syms:["s-eps","s-N"],rows:["b"],viz:"eps",
+  looks:function(){return "float16, (1, 4, 64, 64)\nmean about 0, std about 1"},
+  math:R`<p>\(\epsilon\sim\mathcal N(0,I)\), standard normal noise.</p>`,
+  flow:"A helper in utils/torch_utils.py around torch.randn. With a CPU generator it draws on the CPU and then moves the result, so a seed gives the same noise on any GPU."},
+ to_device:{name:"latents.to(device)",sym:null,kind:"Engineering only",syms:[],rows:[],
+  looks:function(){return "your tensor, same values, now on cuda:0"},
+  math:"<p class='none'>No math here. It only moves the tensor.</p>",
+  flow:"Runs only when you passed latents yourself."},
+ init_noise_sigma:{name:"self.scheduler.init_noise_sigma",sym:R`\sigma_{\text{init}}`,kind:"A number from the scheduler",syms:["s-sig"],rows:["c"],
+  looks:function(){return sigTxt()},
+  math:R`<p>\(x_T=\sigma_{\text{init}}\,\epsilon\)</p><p>The standard deviation the scheduler wants \(x_T\) to have, in the units it keeps \(x\) in.</p>`,
+  flow:"An attribute of the scheduler. Its partner, scale_model_input at line 1039, divides it back out before every UNet forward (line 1042).",
+  note:function(){return sched==="pndm"?"With PNDM this is 1.0 and line 713 changes nothing. Switch to Euler to see why it exists, or open derivation 2.":"Euler keeps x in different units, where pure noise has std about 14.61. SD 1.5's config has no timestep_spacing, so Euler uses linspace and starts at timestep 999."}},
+ latents_out:{name:"latents (returned)",sym:"x_T",kind:"The tensor this function exists for",syms:["s-xT"],rows:["c","d"],viz:"xT",
+  looks:function(){return "float16, (1, 4, 64, 64)\nstd about "+(sched==="pndm"?"1":"14.61")},
+  math:R`<p>\(x_T\sim\mathcal N(0,\sigma_{\text{init}}^2 I)\)</p>`,
+  flow:"Returned to __call__ at line 999. The denoising loop (lines 1028 to 1082) reads and overwrites it fifty times; after the denoising loop, vae.decode at line 1085 turns it into pixels."}
+};
+var SYM2TOK={"s-B":"batch_size","s-C":"num_channels_latents","s-H":"height","s-W":"width","s-f":"vae_scale_factor","s-eps":"randn_tensor","s-N":"randn_tensor","s-g":"generator","s-sig":"init_noise_sigma","s-xT":"latents_out"};
+
+/* ---------------- code ---------------- */
+var CODE=[
+ [694,"    <k>def</k> [[prepare_latents|prepare_latents]](self, [[batch_size|batch_size]], [[num_channels_latents|num_channels_latents]], [[height|height]], [[width|width]], [[dtype|dtype]], [[device|device]], [[generator|generator]], [[latents_in|latents]]=<k>None</k>):"],
+ [695,"        [[shape|shape]] = ("],
+ [696,"            [[batch_size|batch_size]],"],
+ [697,"            [[num_channels_latents|num_channels_latents]],"],
+ [698,"            <k>int</k>([[height|height]]) // [[vae_scale_factor|self.vae_scale_factor]],"],
+ [699,"            <k>int</k>([[width|width]]) // [[vae_scale_factor|self.vae_scale_factor]],"],
+ [700,"        )"],
+ [701,"        [[check|if isinstance(generator, list) and len(generator) != batch_size:]]"],
+ [702,"            <k>raise</k> ValueError("],
+ [703,"                <s>f\"You have passed a list of generators of length {len(generator)}, but requested an effective batch\"</s>"],
+ [704,"                <s>f\" size of {batch_size}. Make sure the batch size matches the length of the generators.\"</s>"],
+ [705,"            )"],
+ [706,""],
+ [707,"        <k>if</k> [[latents_in|latents]] <k>is None</k>:"],
+ [708,"            [[latents_out|latents]] = [[randn_tensor|randn_tensor]]([[shape|shape]], generator=[[generator|generator]], device=[[device|device]], dtype=[[dtype|dtype]])"],
+ [709,"        <k>else</k>:"],
+ [710,"            [[latents_out|latents]] = [[to_device|latents.to(device)]]"],
+ [711,""],
+ [712,"        <c># scale the initial noise by the standard deviation required by the scheduler</c>"],
+ [713,"        [[latents_out|latents]] = [[latents_out|latents]] * [[init_noise_sigma|self.scheduler.init_noise_sigma]]"],
+ [714,"        <k>return</k> [[latents_out|latents]]"]
+];
+var ENG={dtype:1,device:1,check:1,to_device:1};
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+function line(src){
+  var out="",re=/\[\[(\w+)\|(.+?)\]\]|<k>(.*?)<\/k>|<s>(.*?)<\/s>|<c>(.*?)<\/c>/g,last=0,m;
+  while((m=re.exec(src))){
+    out+=esc(src.slice(last,m.index));
+    if(m[1])out+='<span class="tok'+(ENG[m[1]]?" eng":"")+'" tabindex="0" role="button" data-id="'+m[1]+'">'+esc(m[2])+'</span>';
+    else if(m[3]!==undefined)out+='<span class="kw">'+esc(m[3])+'</span>';
+    else if(m[4]!==undefined)out+='<span class="str">'+esc(m[4])+'</span>';
+    else out+='<span class="com">'+esc(m[5])+'</span>';
+    last=re.lastIndex;
+  }
+  return out+esc(src.slice(last));
+}
+document.getElementById("code").innerHTML=CODE.map(function(l){return '<div class="ln" data-ln="'+l[0]+'"><span class="n">'+l[0]+'</span><span class="t">'+line(l[1])+'</span></div>'}).join("");
+
+/* ---------------- math rows ---------------- */
+var ROWS={
+ a:{tex:R`\operatorname{shape}(x_T)=\Big(\class{s-B}{B},\ \class{s-C}{C},\ \frac{\class{s-H}{H}}{\class{s-f}{f}},\ \frac{\class{s-W}{W}}{\class{s-f}{f}}\Big)`,where:"lines 695 to 700",lines:[695,700],tok:"shape"},
+ b:{tex:R`\class{s-eps}{\epsilon}\sim\class{s-N}{\mathcal N(0,I)},\ \ \text{drawn with }\class{s-g}{g}`,where:"lines 707 to 710",lines:[707,710],tok:"randn_tensor"},
+ c:{tex:R`\class{s-xT}{x_T}=\class{s-sig}{\sigma_{\text{init}}}\;\class{s-eps}{\epsilon}`,where:"lines 712 to 713",lines:[712,713],tok:"init_noise_sigma"},
+ d:{tex:R`\class{s-xT}{x_T}\sim\pi(\class{s-xT}{x_T})=\mathcal N\big(0,\ \class{s-sig}{\sigma_{\text{init}}}^{2}\,I\big)`,where:"line 714, survey p. 2",lines:[714,714],tok:"latents_out"}
+};
+document.getElementById("mrows").innerHTML=Object.keys(ROWS).map(function(k){return '<div class="mrow" data-row="'+k+'" tabindex="0" role="button"><div class="eq">\\['+ROWS[k].tex+'\\]</div><span class="where">'+ROWS[k].where+'</span></div>'}).join("");
+
+/* ---------------- inspector panels (built once) ---------------- */
+var insp=document.getElementById("insp");
+Object.keys(T).forEach(function(id){
+  var t=T[id],p=document.createElement("div");p.className="panel";p.dataset.id=id;
+  var h='<div class="ih"><span class="cn">'+esc(t.name)+'</span>'+(t.sym?'<span class="arrow">is</span><span>\\('+t.sym+'\\)</span>':'')+'</div>';
+  h+='<p class="kind">'+t.kind+'</p>';
+  h+='<div class="f"><h3>Looks like</h3><div class="looks" data-looks></div>'+(t.viz?'<div class="viz"><canvas width="64" height="64" data-viz="'+t.viz+'"></canvas><span data-vizcap></span></div>':'')+'</div>';
+  h+='<div class="f"><h3>In the math</h3>'+t.math+'</div>';
+  h+='<div class="f"><h3>Comes from, goes to</h3><p>'+esc(t.flow)+'</p><button class="flowbtn" data-flow="'+id+'">Show this on the flowchart</button></div>';
+  if(t.note)h+='<div class="note" data-note></div>';
+  p.innerHTML=h;insp.appendChild(p);
+});
+
+/* ---------------- noise ---------------- */
+function rng(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+var noise=new Float32Array(64*64);(function(){var r=rng(42);for(var i=0;i<noise.length;i++){var u=0,v=0;while(!u)u=r();while(!v)v=r();noise[i]=Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}})();
+function hexToRgb(c){var d=document.createElement("div");d.style.color=c;document.body.appendChild(d);var s=getComputedStyle(d).color;d.remove();var m=s.match(/[\d.]+/g);return [+m[0],+m[1],+m[2]]}
+function drawViz(){
+  var ink=hexToRgb(getComputedStyle(document.documentElement).getPropertyValue("--ink").trim()),card=hexToRgb(getComputedStyle(document.documentElement).getPropertyValue("--card").trim());
+  document.querySelectorAll("canvas[data-viz]").forEach(function(cv){
+    var scale=cv.dataset.viz==="xT"?sig():1,ctx=cv.getContext("2d"),im=ctx.createImageData(64,64);
+    for(var i=0;i<4096;i++){var v=Math.max(-3,Math.min(3,noise[i]*scale)),a=(v+3)/6;
+      im.data[i*4]=card[0]+(ink[0]-card[0])*a;im.data[i*4+1]=card[1]+(ink[1]-card[1])*a;im.data[i*4+2]=card[2]+(ink[2]-card[2])*a;im.data[i*4+3]=255}
+    ctx.putImageData(im,0,0);
+    cv.nextElementSibling.textContent=cv.dataset.viz==="xT"
+      ?(sched==="pndm"?"Channel 0 of x_T. Same as ε, since σ_init is 1.":"Channel 0 of x_T on the same colour scale as ε. Almost every value is past ±3, so it saturates.")
+      :"Channel 0 of ε, seed 42. Light is negative, dark is positive, clipped at ±3.";
+  });
+}
+function refreshDynamic(){
+  document.querySelectorAll(".panel").forEach(function(p){
+    var t=T[p.dataset.id];p.querySelector("[data-looks]").textContent=t.looks();
+    var n=p.querySelector("[data-note]");if(n){n.textContent=typeof t.note==="function"?t.note():t.note;if(typeof GLP!=="undefined")linkTerms(n)}
+  });
+  document.getElementById("sigcap").textContent="Right now σ_init = "+sigTxt()+".";
+  drawViz();
+}
+
+/* ---------------- linking ---------------- */
+var pinned="prepare_latents",hover=null;
+function mathEls(cls){return document.querySelectorAll("mjx-container g."+cls)}
+function paint(){
+  var id=hover||pinned,t=T[id];
+  document.querySelectorAll(".tok").forEach(function(e){e.classList.toggle("on",e.dataset.id===id&&id!==pinned);e.classList.toggle("pin",e.dataset.id===pinned)});
+  document.querySelectorAll("mjx-container g.on").forEach(function(g){g.classList.remove("on")});
+  t.syms.forEach(function(c){mathEls(c).forEach(function(g){g.classList.add("on")})});
+  document.querySelectorAll(".mrow").forEach(function(r){r.classList.toggle("lit",t.rows.indexOf(r.dataset.row)>=0&&id!=="prepare_latents")});
+  var lit={};t.rows.forEach(function(k){if(id==="prepare_latents")return;for(var n=ROWS[k].lines[0];n<=ROWS[k].lines[1];n++)lit[n]=1});
+  document.querySelectorAll(".ln").forEach(function(l){l.classList.toggle("lit",!!lit[l.dataset.ln])});
+  document.querySelectorAll(".panel").forEach(function(p){p.classList.toggle("show",p.dataset.id===id)});
+}
+var narrow=matchMedia("(max-width:900px)");
+function openSheet(on){document.getElementById("inspzone").classList.toggle("open",on&&narrow.matches)}
+function pin(id,fromUser){pinned=id;hover=null;paint();if(fromUser!==false)openSheet(true)}
+document.getElementById("closer").addEventListener("click",function(e){e.stopPropagation();openSheet(false)});
+var code=document.getElementById("code");
+code.addEventListener("mouseover",function(e){var t=e.target.closest(".tok");if(t){hover=t.dataset.id;paint()}});
+code.addEventListener("mouseleave",function(){hover=null;paint()});
+code.addEventListener("click",function(e){var t=e.target.closest(".tok");if(t)pin(t.dataset.id)});
+code.addEventListener("keydown",function(e){var t=e.target.closest(".tok");if(t&&(e.key==="Enter"||e.key===" ")){e.preventDefault();pin(t.dataset.id)}});
+function symOf(el){var g=el.closest&&el.closest("g[class]");while(g){var cls=(g.getAttribute("class")||"").split(/\s+/).filter(function(c){return SYM2TOK[c]});if(cls.length)return SYM2TOK[cls[0]];g=g.parentElement&&g.parentElement.closest("g[class]")}return null}
+document.addEventListener("mouseover",function(e){if(!e.target.closest||!e.target.closest("mjx-container"))return;var id=symOf(e.target);if(id&&id!==hover){hover=id;paint()}});
+document.addEventListener("mouseout",function(e){if(e.target.closest&&e.target.closest("mjx-container")&&hover&&!(e.relatedTarget&&e.relatedTarget.closest&&e.relatedTarget.closest("mjx-container"))){hover=null;paint()}});
+document.addEventListener("click",function(e){
+  if(e.target.closest&&e.target.closest("mjx-container")){var id=symOf(e.target);if(id){pin(id);e.stopPropagation();return}}
+  var r=e.target.closest&&e.target.closest(".mrow");if(r){pin(ROWS[r.dataset.row].tok);return}
+  var c=e.target.closest&&e.target.closest("[data-go]");if(c){pin(c.dataset.go);document.getElementById("code").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"})}
+},true);
+document.getElementById("mrows").addEventListener("keydown",function(e){var r=e.target.closest(".mrow");if(r&&(e.key==="Enter"||e.key===" ")){e.preventDefault();pin(ROWS[r.dataset.row].tok)}});
+document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!fc.open){if(document.getElementById("inspzone").classList.contains("open"))openSheet(false);else pin("prepare_latents",false)}});
+document.querySelectorAll(".switch button").forEach(function(b){b.addEventListener("click",function(){
+  sched=b.dataset.s;document.querySelectorAll(".switch button").forEach(function(x){x.setAttribute("aria-pressed",x===b)});refreshDynamic();
+})});
+
+/* ---------------- algorithm ---------------- */
+var ALGO=[
+ [R`x_T\sim\pi(x_T)=\mathcal N(0,I)`,"prepare_latents, this page. Called by __call__ at line 999.","p. 2",true],
+ [R`\textbf{for } t=T,\dots,1\ \textbf{do}`,"the denoising loop, __call__ step 7, line 1032",""],
+ [R`\epsilon_\theta(x_t,t)`,"the UNet forward, line 1042; guidance combines the two halves at lines 1054 to 1055","Eq. 13 for guidance"],
+ [R`\mu_\theta(x_t,t)=\tfrac{1}{\sqrt{\alpha_t}}\Big(x_t-\tfrac{1-\alpha_t}{\sqrt{1-\bar\alpha_t}}\,\epsilon_\theta(x_t,t)\Big)`,"inside the scheduler step, line 1062","Eq. 6"],
+ [R`x_{t-1}\sim\mathcal N\big(\mu_\theta(x_t,t),\,\Sigma_\theta\big)`,"the scheduler step returns this as the new latents, line 1062","p. 2"],
+ [R`\textbf{return } x_0`,"after the denoising loop: vae.decode at line 1085, after dividing by 0.18215",""]
+];
+document.getElementById("algo").innerHTML=ALGO.map(function(a,i){return '<div class="arow'+(a[3]?" here":"")+'"><span class="k">'+(i+1)+'</span><div class="eq">\\('+a[0]+'\\)'+(a[2]?'<span class="eqref">survey '+a[2]+'</span>':'')+'</div><div class="map">'+a[1]+'</div></div>'}).join("");
+
+/* ---------------- derivations ---------------- */
+var DERS=[
+ {q:"Derive the latent's spatial size from the image size and the VAE's downsampling.",
+  steps:[
+   [R`x\in\mathbb R^{3\times 512\times 512}`,"The image."],
+   [R`L=\big|[128,256,512,512]\big|=4\ \Rightarrow\ L-1=3\ \text{halvings}`,"The VAE's block_out_channels. It halves the resolution between blocks."],
+   [R`\class{s-f}{f}=2^{3}=8`,"This is self.vae_scale_factor."],
+   [R`z\in\mathbb R^{\class{s-C}{4}\times\frac{512}{8}\times\frac{512}{8}}=\mathbb R^{4\times 64\times 64}`,"4 is latent_channels, which the UNet's in_channels must equal."],
+   [R`\frac{3\cdot 512^2}{4\cdot 64^2}=\frac{786{,}432}{16{,}384}=48`,"The UNet works on 48 times fewer numbers than the image has."],
+   [R`z_0=0.18215\cdot\mathcal E(x),\qquad \operatorname{Var}(z_0)\approx 1`,"The scaling factor makes the latent unit variance, which is what lets the start be plain N(0, I). It is undone at line 1085, not here."]
+  ],
+  answer:R`<p>\(512/2^3=64\), so \(x_T\) is \(4\times64\times64\) per image, and \(B\times4\times64\times64\) for a batch.</p>`,
+  chips:[["vae_scale_factor","self.vae_scale_factor"],["num_channels_latents","num_channels_latents"],["shape","shape"]]},
+ {q:"Why does init_noise_sigma exist, when the noise is already standard normal?",
+  steps:[
+   [R`x_t=\sqrt{\bar\alpha_t}\,x_0+\sqrt{1-\bar\alpha_t}\,\epsilon`,"Survey Eq. 3. PNDM and DDIM keep x in these units (derivation 3)."],
+   [R`\operatorname{Var}(x_t)=\bar\alpha_t+(1-\bar\alpha_t)=1`,"With Var(x₀) = 1. So unit noise is already the right start, and σ_init = 1."],
+   [R`\tilde x_t=\frac{x_t}{\sqrt{\bar\alpha_t}}=x_0+\sigma_t\,\epsilon`,"Euler divides out the shrinking: the image stays full size and the noise grows. This is the survey's VE view, Eq. 9 with f = 0."],
+   [R`\sigma_t=\sqrt{\frac{1-\bar\alpha_t}{\bar\alpha_t}}`,"The survey's σ(t), evaluated at timestep t."],
+   [R`\sigma_{999}=\sqrt{\frac{1-0.00466}{0.00466}}\approx 14.61`,"SD 1.5's schedule at Euler's first timestep, 999."],
+   [R`\operatorname{Var}(\tilde x_T)=1+\sigma_T^2\approx\sigma_T^2`,"The image part (variance 1) is negligible next to σ_T² ≈ 213, so the std is about σ_T."],
+   [R`\tilde x_T=\class{s-sig}{\sigma_{\text{init}}}\,\class{s-eps}{\epsilon},\qquad \sigma_{\text{init}}\approx 14.61`,"This is line 713."],
+   [R`1+\sigma_t^2=\frac{\bar\alpha_t+1-\bar\alpha_t}{\bar\alpha_t}=\frac{1}{\bar\alpha_t}`,"Square step 4 and add 1. This is the way back."],
+   [R`x_t=\sqrt{\bar\alpha_t}\,\tilde x_t=\frac{\tilde x_t}{\sqrt{1+\sigma_t^2}}`,"scale_model_input at line 1039, just before the UNet forward at line 1042. The UNet always sees unit variance, whatever the scheduler."]
+  ],
+  answer:R`<p>"Standard normal" depends on the units the scheduler keeps \(x\) in. In DDPM units pure noise has std 1; in Euler's units it has std \(\sigma_{\max}\approx14.61\).</p><p>The scheduler owns both the scale up (line 713) and the scale down (step 9), so __call__ never needs to know which scheduler it was given.</p>`,
+  chips:[["init_noise_sigma","self.scheduler.init_noise_sigma"],["latents_out","latents"]]},
+ {q:"One level down: why is pure noise the right place to start?",
+  steps:[
+   [R`p(x_t\mid x_{t-1})=\mathcal N\big(x_t;\ \sqrt{1-\beta_t}\,x_{t-1},\ \beta_t I\big)`,"Survey Eq. 1: one forward step."],
+   [R`x_t=\sqrt{\alpha_t}\,x_{t-1}+\sqrt{1-\alpha_t}\,\epsilon,\qquad \alpha_t:=1-\beta_t`,"The same step written as a sample, with ε ∼ N(0, I)."],
+   [R`x_t=\sqrt{\alpha_t\alpha_{t-1}}\,x_{t-2}+\sqrt{\alpha_t(1-\alpha_{t-1})}\,\epsilon'+\sqrt{1-\alpha_t}\,\epsilon`,"Substitute the step before, with its own independent noise ε′."],
+   [R`\alpha_t(1-\alpha_{t-1})+(1-\alpha_t)=1-\alpha_t\alpha_{t-1}`,"Independent zero-mean Gaussians: their variances add."],
+   [R`x_t=\sqrt{\bar\alpha_t}\,x_0+\sqrt{1-\bar\alpha_t}\,\epsilon_t,\qquad \bar\alpha_t:=\textstyle\prod_{i=1}^{t}\alpha_i`,"Repeat down to x₀. Survey Eq. 3, and Eq. 2 as a distribution."],
+   [R`\bar\alpha_T=\prod_{t=1}^{1000}(1-\beta_t)\approx 0.00466`,"SD 1.5: √β linear from √0.00085 to √0.012 over 1000 steps."],
+   [R`x_T\approx 0.068\,x_0+0.998\,\epsilon_T`,"Plug in t = T. Almost nothing of the image is left."],
+   [R`\pi(x_T):=\mathcal N(0,I)`,"Drop the 0.068 x₀ term. This is the survey's prior on p. 2, line 1 of Algorithm 2, and code line 708."]
+  ],
+  answer:R`<p>At \(t=T\) the image is almost gone, so \(x_T\) does not depend on which image you want and can be drawn blind.</p><p>"Almost" matters: the leftover \(0.068\,x_0\) is the non-zero terminal SNR flaw (Lin et al. 2023). The <code>guidance_rescale</code> option in this pipeline comes from the same paper.</p>`,
+  chips:[["randn_tensor","randn_tensor"]]}
+];
+document.getElementById("ders").innerHTML=DERS.map(function(d,i){
+  return '<details><summary><span class="num">'+(i+1)+'</span><span class="q">'+d.q+'</span><span class="open"></span></summary><div class="dbody"><ol class="steps">'+
+   d.steps.map(function(s){return '<li><div class="eq">\\['+s[0]+'\\]</div><div class="why">'+s[1]+'</div></li>'}).join("")+
+   '</ol><div class="answer"><h3>'+(i===0?"The answer in one line":"The answer in two lines")+'</h3>'+d.answer+'</div><div class="chips">'+
+   d.chips.map(function(c){return '<button class="chip" data-go="'+c[0]+'">Show '+esc(c[1])+' in the code</button>'}).join("")+'</div></div></details>';
+}).join("");
+
+
+/* ---------------- flowchart dialog ---------------- */
+var FN={
+ IN:{t:"Inputs and config",l:"your call, model files",d:"What you pass to pipe(...), and what SD 1.5's config files fix.",
+  takes:"nothing yet",gives:"prompt, num_images_per_prompt = 1, height = width = None, generator, latents = None; unet in_channels 4 and sample_size 64; vae block_out_channels; scheduler betas"},
+ S0:{t:"Step 0: default size",l:"lines 912 to 924",d:"No size given, so height = width = sample_size 64 × vae_scale_factor 8 = 512.",
+  takes:"unet.config.sample_size, self.vae_scale_factor",gives:"height = 512, width = 512"},
+ S1:{t:"Step 1: check_inputs",l:"line 928, size check at line 638",d:"Stops early on bad arguments. Makes sure height and width divide by 8, so the // 8 inside prepare_latents loses nothing.",
+  takes:"prompt, height, width, and the rest",gives:"nothing, or an error"},
+ S2:{t:"Step 2: batch size and device",l:"lines 947 to 955",d:"A string prompt counts as a batch of 1. The device is where the UNet will run.",
+  takes:"prompt",gives:"batch_size = 1, device = cuda:0"},
+ S3:{t:"Step 3: encode_prompt",l:"lines 957 to 987",d:"CLIP turns the prompt into prompt_embeds. With guidance on, line 978 stacks [negative, positive].",
+  takes:"prompt, negative_prompt, device",gives:"prompt_embeds, (2, 77, 768), float16"},
+ S4:{t:"Step 4: retrieve_timesteps",l:"lines 989 to 995",d:"Calls scheduler.set_timesteps(50): the timesteps the denoising loop will visit. For Euler and LMS it also builds the σ table that init_noise_sigma reads, which is why step 5 comes after it.",
+  takes:"self.scheduler, num_inference_steps = 50",gives:"timesteps, 50 of them, from high to low"},
+ S5:{t:"Step 5: prepare_latents",l:"lines 997 to 1008, call at 999",d:"This page. Reads num_channels_latents from the UNet config (line 998), then makes one call with 8 arguments.",
+  takes:"results of steps 0, 2, 3 and 4, plus your generator and latents",gives:"latents = x_T, (1, 4, 64, 64). The denoising loop in step 7 cannot start without it.",me:true,
+  kids:["P1","P2","P3","P4","P5"]},
+ P1:{t:"Build shape",l:"lines 695 to 700",d:"(B, C, H // 8, W // 8) = (1, 4, 64, 64).",takes:"batch_size, num_channels_latents, height, width, vae_scale_factor",gives:"shape"},
+ P2:{t:"Check the generator list",l:"lines 701 to 705",d:"A list of generators must have one per image.",takes:"generator, batch_size",gives:"nothing, or ValueError"},
+ P3:{t:"Draw ε, or take yours",l:"lines 707 to 710",d:"randn_tensor draws standard normal noise. Latents you passed are only moved to the device.",takes:"shape, generator, device, dtype, latents",gives:"ε, std 1"},
+ P4:{t:"Scale by init_noise_sigma",l:"lines 712 to 713",d:"× 1.0 for PNDM, × 14.61 for Euler: the prior in the scheduler's units.",takes:"ε, scheduler.init_noise_sigma",gives:"x_T"},
+ P5:{t:"Return x_T",l:"line 714",d:"Back to __call__, which stores it in latents at line 999.",takes:"x_T",gives:"latents"},
+ S6:{t:"Step 6: extra step kwargs",l:"lines 1010 to 1011",d:"Packs eta and the generator for the scheduler step, for schedulers that accept them.",
+  takes:"generator, eta",gives:"extra_step_kwargs"},
+ S7:{t:"Step 7: denoising loop",l:"lines 1028 to 1082",d:"for i, t in enumerate(timesteps): 50 iterations. Only latents and t change from one iteration to the next.",
+  takes:"latents, timesteps, prompt_embeds, extra_step_kwargs",gives:"latents = z_0 after the last iteration",kids:["L1","L2","L3","L4","L5"],loop:true},
+ L1:{t:"Copy for guidance",l:"line 1037",d:"torch.cat([latents] * 2): (2, 4, 64, 64), one half per prompt.",takes:"latents",gives:"latent_model_input"},
+ L2:{t:"scale_model_input",l:"lines 1038 to 1039",d:"Identity for PNDM; ÷ √(σ_t² + 1) for Euler, undoing init_noise_sigma's scale.",takes:"latent_model_input, t",gives:"latent_model_input"},
+ L3:{t:"UNet forward",l:"line 1042",d:"Predicts the noise ε_θ(x_t, t), attending to prompt_embeds.",takes:"latent_model_input, t, prompt_embeds",gives:"noise_pred, (2, 4, 64, 64)"},
+ L4:{t:"Guidance",l:"lines 1053 to 1055",d:"ε_u + s (ε_c − ε_u) with s = 7.5. Back to (1, 4, 64, 64).",takes:"noise_pred",gives:"noise_pred"},
+ L5:{t:"Scheduler step",l:"line 1062",d:"x_t → x_(t−1). Overwrites latents, then the next iteration begins.",takes:"noise_pred, t, latents",gives:"latents"},
+ S8:{t:"After the denoising loop",l:"lines 1084 to 1099",d:"vae.decode(latents / 0.18215) at line 1085 gives (1, 3, 512, 512); image_processor.postprocess at line 1099 gives a PIL image.",
+  takes:"latents = z_0",gives:"your image"}
+};
+var ORDER=["IN","S0","S1","S2","S3","S4","S5","S6","S7","S8"];
+var HOPS={
+ prepare_latents:[["S4","retrieve_timesteps(...)","runs first, so init_noise_sigma is ready"],["S5","latents = self.prepare_latents(...)","the call, line 999"],["P5","return latents","x_T, (1, 4, 64, 64)"],["S7","for i, t in enumerate(timesteps)","the denoising loop starts from it"]],
+ batch_size:[["IN","pipe(\"a photo of a cat\")","one prompt, num_images_per_prompt = 1"],["S2","batch_size = 1","a string prompt counts as 1"],["S5","batch_size * num_images_per_prompt","line 1000: 1 × 1 = 1"],["P1","shape[0]","line 696: B = 1"],["P3","randn_tensor(shape, ...)","line 708: (1, 4, 64, 64)"],["L1","torch.cat([latents] * 2)","(2, 4, 64, 64): guidance doubles it"],["L4","noise_pred.chunk(2)","back to 1"],["S8","vae.decode(...)","(1, 3, 512, 512): one image"]],
+ num_channels_latents:[["IN","unet/config.json: \"in_channels\": 4","4"],["S5","self.unet.config.in_channels","line 998: 4"],["P1","shape[1]","line 697: C = 4"],["L3","self.unet(latent_model_input, ...)","the UNet's first layer takes 4 channels"],["S8","vae.decode(...)","the VAE decoder takes latent_channels = 4"]],
+ height:[["IN","height=None; unet sample_size 64","nothing given"],["S0","height = 64 * self.vae_scale_factor","512"],["S1","if height % 8 != 0: raise","line 638: 512 passes"],["S5","height","line 1002: 512"],["P1","int(height) // self.vae_scale_factor","line 698: 64"],["S8","vae.decode(...)","back to 512 pixels"]],
+ width:[["IN","width=None; unet sample_size 64","nothing given"],["S0","width = 64 * self.vae_scale_factor","512"],["S1","if width % 8 != 0: raise","line 638: 512 passes"],["S5","width","line 1003: 512"],["P1","int(width) // self.vae_scale_factor","line 699: 64"],["S8","vae.decode(...)","back to 512 pixels"]],
+ vae_scale_factor:[["IN","vae block_out_channels [128, 256, 512, 512]; __init__ line 296","2 ** (4 - 1) = 8"],["S0","height * self.vae_scale_factor","line 924: 64 → 512"],["P1","// self.vae_scale_factor","lines 698 to 699: 512 → 64"],["S8","vae.decode(...)","the decoder upsamples 64 → 512"]],
+ dtype:[["IN","from_pretrained(..., torch_dtype=torch.float16)","weights in fp16"],["S3","prompt_embeds","float16"],["S5","prompt_embeds.dtype","line 1004"],["P3","randn_tensor(..., dtype=dtype)","line 708: noise in float16"],["P3","latents.to(device)","line 710: your own latents are not cast"]],
+ device:[["IN","pipe.to(\"cuda\")","models on the GPU"],["S2","device = self._execution_device","line 955: cuda:0"],["S5","device","line 1005"],["P3","randn_tensor(..., device=device)","x_T on cuda:0"]],
+ generator:[["IN","torch.Generator(\"cuda\").manual_seed(42)","the seed"],["S5","generator","line 1006"],["P2","len(generator) != batch_size","lists only"],["P3","randn_tensor(..., generator=generator)","fixes ε"],["S6","prepare_extra_step_kwargs(generator, eta)","line 1011"],["L5","self.scheduler.step(..., **extra_step_kwargs)","only for schedulers that add noise"],["S8","vae.decode(..., generator=generator)","only if the VAE samples"]],
+ check:[["IN","generator=[g1, g2]","a list"],["S5","batch_size * num_images_per_prompt","line 1000: must equal the list length"],["P2","raise ValueError(...)","before any noise is drawn"]],
+ latents_in:[["IN","latents=None","or your own tensor"],["S5","latents","line 1007"],["P3","if latents is None / latents.to(device)","draw fresh, or move yours"],["P4","* init_noise_sigma","scaled either way"]],
+ shape:[["S5","batch_size, num_channels_latents, height, width","lines 1000 to 1003"],["P1","(B, C, H // 8, W // 8)","(1, 4, 64, 64)"],["P3","randn_tensor(shape, ...)","its only use"]],
+ randn_tensor:[["P3","randn_tensor(shape, generator, device, dtype)","utils/torch_utils.py line 183; ε, std 1"],["P4","latents * init_noise_sigma","becomes x_T"]],
+ to_device:[["IN","latents=my_tensor","your own noise"],["P3","latents.to(device)","moved, not cast"],["P4","* init_noise_sigma","still scaled"]],
+ init_noise_sigma:[["IN","scheduler_config.json: scaled_linear, 0.00085 to 0.012","the noise schedule"],["S4","scheduler.set_timesteps(50)","timesteps, and Euler's σ table"],["P4","latents * self.scheduler.init_noise_sigma","× σ_init"],["L2","self.scheduler.scale_model_input(...)","divides it back out"],["L3","self.unet(...)","sees unit variance"]],
+ latents_out:[["P5","return latents","x_T, (1, 4, 64, 64)"],["S5","latents = self.prepare_latents(...)","line 999: __call__ holds it"],["L1","torch.cat([latents] * 2)","(2, 4, 64, 64)"],["L2","scale_model_input(...)","÷ √(σ_t² + 1) for Euler"],["L3","self.unet(...)","ε_θ(x_t, t)"],["L5","latents = self.scheduler.step(...)","x_t → x_(t−1), 50 times"],["S8","vae.decode(latents / 0.18215)","(1, 3, 512, 512), then a PIL image"]]
+};
+var fc=document.getElementById("fc"),fclist=document.getElementById("fclist"),flowOpenFor=null;
+function nodeHTML(k,cls){
+  var n=FN[k];
+  return '<button class="fnode'+(cls||"")+(n.me&&!n.kids?" me":"")+'" data-node="'+k+'" aria-expanded="false"><span class="ft"><b>'+esc(n.t)+'</b><span>'+esc(n.l)+'</span></span><span class="fd">'+esc(n.d)+'</span><span class="fmore"><b>Takes</b> '+esc(n.takes)+'<br><b>Gives</b> '+esc(n.gives)+'</span><span class="hops"></span></button>';
+}
+function buildChart(){
+  var h="";
+  ORDER.forEach(function(k,i){
+    var n=FN[k];
+    if(i)h+='<div class="fconn"></div>';
+    if(n.kids){
+      h+='<div class="fgroup'+(n.me?" me":"")+'">'+nodeHTML(k," head")+'<div class="kids">'+n.kids.map(function(c,j){return (j?'<div class="fconn"></div>':'')+nodeHTML(c)}).join("")+'</div>'+(n.loop?'<div class="loopback" aria-hidden="true"><span>× 50</span></div>':'')+'</div>';
+    } else h+=nodeHTML(k);
+  });
+  fclist.innerHTML=h;
+}
+buildChart();
+fclist.addEventListener("click",function(e){var b=e.target.closest(".fnode");if(!b)return;var on=!b.classList.contains("expanded");b.classList.toggle("expanded",on);b.setAttribute("aria-expanded",on)});
+function renderFlow(id){
+  flowOpenFor=id;
+  fclist.querySelectorAll(".fnode").forEach(function(b){b.classList.remove("lit","expanded");b.setAttribute("aria-expanded","false");b.querySelector(".hops").innerHTML=""});
+  if(!id){
+    fclist.classList.remove("tracing");
+    document.getElementById("fctitle").textContent="How __call__ runs";
+    document.getElementById("fchint").textContent="Top to bottom, the order pipe(prompt) runs in. Tap any box to see what it takes and what it gives.";
+    document.getElementById("fclegend").textContent="The tinted box is prepare_latents, opened up to show its own lines. The denoising loop repeats its five boxes 50 times.";
+    return;
+  }
+  var name=T[id].name.replace(/ \(.*\)$/,"");
+  fclist.classList.add("tracing");
+  document.getElementById("fctitle").textContent="Where "+name+" travels";
+  document.getElementById("fchint").textContent="The lit boxes are the steps it passes through. Numbers give the order.";
+  document.getElementById("fclegend").textContent="Faded boxes do not touch it. Tap any box to see what it takes and what it gives.";
+  (HOPS[id]||[]).forEach(function(hp,i){
+    var b=fclist.querySelector('[data-node="'+hp[0]+'"]');if(!b)return;
+    b.classList.add("lit");
+    b.querySelector(".hops").insertAdjacentHTML("beforeend",'<span class="hop"><i>'+(i+1)+'</i><code>'+esc(hp[1])+'</code><span>'+esc(hp[2])+'</span></span>');
+  });
+}
+function openFlow(id){
+  openSheet(false);renderFlow(id||null);
+  if(typeof fc.showModal==="function")fc.showModal();else fc.setAttribute("open","");
+  var first=id?fclist.querySelector(".fnode.lit"):null,body=fc.querySelector(".fc-body");
+  body.scrollTop=0;
+  if(first){requestAnimationFrame(function(){body.scrollTop=Math.max(0,first.getBoundingClientRect().top-body.getBoundingClientRect().top-12)})}
+}
+function closeFlow(){if(fc.open){if(typeof fc.close==="function")fc.close();else fc.removeAttribute("open")}flowOpenFor=null}
+document.getElementById("fcclose").addEventListener("click",closeFlow);
+fc.addEventListener("close",function(){flowOpenFor=null});
+fc.addEventListener("click",function(e){if(e.target===fc)closeFlow()});
+document.getElementById("openflow").addEventListener("click",function(){openFlow(null)});
+insp.addEventListener("click",function(e){var b=e.target.closest(".flowbtn");if(b)openFlow(b.dataset.flow)});
+
+/* ---------------- light follows the day ---------------- */
+var root=document.documentElement;
+function applyLight(){
+  var h=new Date().getHours(),tod=h>=5&&h<12?"morning":h>=12&&h<17?"afternoon":h>=17&&h<22?"evening":"night";
+  var forced=root.getAttribute("data-theme"),prefDark=matchMedia("(prefers-color-scheme: dark)").matches;
+  var dark=forced==="dark"||(forced!=="light"&&prefDark);
+  var scheme,ground,light;
+  if(forced==="light"||(!dark&&(tod==="morning"||tod==="afternoon"))){
+    scheme="day";
+    ground=tod==="morning"?"#F6EEE1":"#F4EEE4";
+    light=tod==="morning"?"radial-gradient(1100px 520px at 0% 0%,rgba(255,236,200,.55),transparent 70%)"
+         :tod==="afternoon"?"radial-gradient(1200px 420px at 50% -10%,rgba(255,244,214,.6),transparent 70%)"
+         :"radial-gradient(900px 480px at 50% 110%,rgba(242,154,46,.14),transparent 70%)";
+  } else {
+    scheme="night";
+    if(tod==="night"){ground="#1A1512";light="radial-gradient(900px 460px at 50% 115%,rgba(242,154,46,.12),transparent 70%)";}
+    else{ground="#33241F";light=tod==="evening"?"radial-gradient(800px 520px at 105% 20%,rgba(224,120,74,.16),transparent 70%)":"radial-gradient(900px 460px at 50% 115%,rgba(242,154,46,.10),transparent 70%)";}
+  }
+  root.setAttribute("data-scheme",scheme);
+  root.style.setProperty("--ground",ground);
+  root.style.setProperty("--light",light);
+  if(scheme==="night"&&ground==="#33241F"){root.style.setProperty("--card","#2A1E1A");root.style.setProperty("--code-bg","#2A1E1A")}
+  else{root.style.removeProperty("--card");root.style.removeProperty("--code-bg")}
+  drawViz();
+}
+new MutationObserver(function(ms){if(ms.some(function(m){return m.attributeName==="data-theme"}))applyLight()}).observe(root,{attributes:true});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",applyLight);
+setInterval(applyLight,5*60*1000);
+
+/* ---------------- glossary links ---------------- */
+var GLP=[[/classifier-free guidance/i,"cfg"],[/terminal SNR/,"snr"],[/\bSNR\b/,"snr"],[/\bDDPM(?:Scheduler)?\b/,"ddpm"],[/\bDDIM(?:Scheduler)?\b/,"ddim"],[/\bPNDM(?:Scheduler)?\b/,"pndm"],[/\bEuler(?:DiscreteScheduler)?\b/,"euler"],[/\bLMS(?:DiscreteScheduler)?\b/,"lms"],[/\bVE\b/,"vpve"],[/\bVP\b/,"vpve"],[/σ table/,"sigtable"],[/noise schedule/i,"schedule"],[/forward process/i,"forward"],[/reverse process/i,"reverse"],[/\bprior\b/,"prior"],[/latent diffusion/i,"ldm"],[/\bVAE\b/,"vae"],[/\bCLIP\b/,"clip"],[/\bfp16\b/,"fp16"],[/\bNCHW\b/,"nchw"],[/denoising loop/i,"loop"],[/UNet forward/,"unetfwd"],[/scheduler step/i,"schedstep"],[/sampling algorithm/i,"sampalg"]];
+function linkTerms(root){
+  var used={},walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:function(n){
+    var p=n.parentElement;if(!p||p.closest("code,a,button,.gl,.looks,mjx-container,dialog,script,style"))return NodeFilter.FILTER_REJECT;return NodeFilter.FILTER_ACCEPT}});
+  var nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+  nodes.forEach(function(tn){
+    var parts=tn.nodeValue.split(/(\\\(.*?\\\)|\\\[[\s\S]*?\\\])/),changed=false,frag=document.createDocumentFragment();
+    parts.forEach(function(seg,k){
+      if(k%2===1||!seg){frag.appendChild(document.createTextNode(seg));return}
+      var rest=seg;
+      while(rest){
+        var best=null;
+        GLP.forEach(function(g){if(used[g[1]])return;var m=g[0].exec(rest);if(m&&(!best||m.index<best.m.index))best={m:m,id:g[1]}});
+        if(!best){frag.appendChild(document.createTextNode(rest));break}
+        changed=true;used[best.id]=1;
+        frag.appendChild(document.createTextNode(rest.slice(0,best.m.index)));
+        var a=document.createElement("span");a.className="gl";a.setAttribute("role","button");a.tabIndex=0;a.dataset.gl=best.id;a.title="See this in Terms on this page";a.textContent=best.m[0];frag.appendChild(a);
+        rest=rest.slice(best.m.index+best.m[0].length);
+      }
+    });
+    if(changed)tn.parentNode.replaceChild(frag,tn);
+  });
+}
+document.querySelectorAll(".lede,.callbar p,.hint,.fine,.project p,.dbody .why,.answer,.panel .f p,.panel .note,.panel .kind,.arow .map,.prov p,.ntable td,.sigcap").forEach(function(el){if(!el.closest("section")||!el.closest("section").querySelector("dl.terms"))linkTerms(el)});
+function goGloss(a){
+  openSheet(false);
+  var dt=document.getElementById("gl-"+a.dataset.gl);if(!dt)return;
+  dt.scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"});
+  dt.classList.add("flash");setTimeout(function(){dt.classList.remove("flash")},1600);
+}
+document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest(".gl");if(a){e.preventDefault();e.stopPropagation();goGloss(a)}},true);
+document.addEventListener("keydown",function(e){var a=e.target.closest&&e.target.closest(".gl");if(a&&(e.key==="Enter"||e.key===" ")){e.preventDefault();goGloss(a)}});
+
+/* ---------------- go ---------------- */
+refreshDynamic();applyLight();paint();
+function typesetAll(){
+  if(window.MathJax&&MathJax.startup&&MathJax.startup.promise){
+    MathJax.startup.promise.then(function(){return MathJax.typesetPromise()}).then(paint).catch(function(e){console.error(e)});
+  } else setTimeout(typesetAll,100);
+}
+typesetAll();
+})();
+</script>
+</body>
+</html>

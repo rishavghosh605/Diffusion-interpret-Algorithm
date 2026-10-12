@@ -121,3 +121,15 @@ A running log of real mistakes caught while building this series, kept so the sa
 **Fix:** Replaced `&hellip;` with the literal Unicode ellipsis character `…` in the source string. `esc()` only touches `&`, `<` and `>`, so a real Unicode character passes through untouched and displays correctly.
 
 **Now automatic?** No, and hard to make fully automatic: the general rule is write the actual character you want displayed into a JS string, never an HTML entity, since every page's own renderer escapes that string before it reaches the DOM. Worth a one-line callout in `VERIFICATION.md`'s reading pass (item 5) so it's checked by eye rather than assumed.
+
+---
+
+### A page built outside this session's pipeline, dedented by one indentation level
+
+**What happened:** `prepare_latents.html` was built in an earlier, separate Claude conversation and handed over as a finished Artifact link, not built through this session's pin-and-verify loop. Every one of its 21 `CODE` lines was missing exactly one level of indentation (4 spaces) compared to the real pinned file: `def prepare_latents(...)` at column 0 instead of column 4 (it's a class method), its body at column 4 instead of column 8, and so on, uniformly, line for line. The content itself (every token, every string, every keyword) was character-for-character correct; only the leading whitespace was wrong, consistently, on every single line.
+
+**Why:** Whatever process built the page in that other conversation evidently copied the function's body with its enclosing class/method indentation stripped off (a common side effect of pasting a function out of a class and dedenting it for readability), and that version shipped without ever being diffed against the actual file. Because it was uniform, the bug didn't look like a bug when skimmed by eye: the code pane still read as syntactically valid Python, properly nested, with every line indented more than the one before it where that was expected. Only `VERIFICATION.md` item 2 (the scripted line-for-line diff against the pinned source) caught it, immediately and unambiguously, as 19 of 21 lines failing to match.
+
+**Fix:** Added 4 spaces to the start of every `CODE` entry's string content (not just the lines that already had some indentation, but also the `def` line and the two blank-line entries, which needed no change) and re-ran the diff: 0 mismatches. Republished to the same Artifact URL so the existing link updated in place rather than forking into a second one.
+
+**Now automatic?** Yes, already — this is exactly `VERIFICATION.md` item 2 doing its job. The new lesson isn't a new check; it's that a page arriving from outside this session's own build loop (a different conversation, a teammate, anywhere other than "just built here, about to be verified for the first time") gets the full checklist run against it before being trusted, not a lighter pass just because it looks finished and polished. A convincing-looking page is not a verified one.

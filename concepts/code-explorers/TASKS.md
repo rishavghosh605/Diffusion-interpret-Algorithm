@@ -14,6 +14,8 @@ Route order (the X-Ray's own), done vs. remaining:
 
 All five of Task 1's pages are now built, verified and shipped. Task 2 (the walkthrough repo and GitHub Pages) is next.
 
+6. ~~Latent initialisation~~ — `pipeline_stable_diffusion.py` L694–714, `StableDiffusionPipeline.prepare_latents` (Stage B, Algorithm 2's first row). Not originally part of Task 1's five; supplied pre-built from another conversation and run through the same verification pipeline here, which caught a real bug (every line missing one level of indentation — see `MISTAKES.md`) before shipping. With this page, every stage the X-Ray and Algorithm 2 name is built. Done: [`prepare_latents.html`](prepare_latents.html), [live version](https://claude.ai/artifact/PNQzNuxFspofLyXHHhFHWL).
+
 ## Task 2 — Turn it into a walkthrough repo, with GitHub Pages
 
 Repo-hosting and structure layer only, no artifact content work (Task 1's `.html` files are the material; this just makes them walkable). Audience: a newcomer to Stable Diffusion, reading the repo top to bottom to learn it, not someone who already knows what they're looking for.
