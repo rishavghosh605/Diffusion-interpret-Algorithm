@@ -193,6 +193,11 @@ ol.steps .why{grid-column:2;font:400 13.5px/19px var(--sans);color:var(--muted)}
 .archpanel{margin-top:10px;padding:14px 16px}
 .archpanel h3{font:600 14px/19px var(--sans);margin:0 0 4px;color:var(--ink)}
 .archpanel p{margin:0;font-size:15px;line-height:1.55}
+.archattn{fill:var(--flame-ink);stroke:var(--card);stroke-width:1.5}
+.archlegend{display:flex;flex-wrap:wrap;gap:14px 20px;margin:2px 0 10px;font:400 12.5px/18px var(--sans);color:var(--muted)}
+.archlegend span{display:inline-flex;align-items:center;gap:6px}
+.archlegend .dot{width:8px;height:8px;border-radius:999px;background:var(--flame-ink);flex:none}
+.archlegend .box{width:12px;height:12px;border-radius:2px;border:1px solid var(--line-strong);background:var(--flame-soft);flex:none}
 .prov{font:400 12.5px/19px var(--sans);color:var(--muted);max-width:80ch}
 .prov p{margin:0 0 6px}
 .closer{display:none}
@@ -365,70 +370,74 @@ dl.terms dt:last-of-type,dl.terms dd:last-of-type{border-bottom:0}
 <section>
   <h2>The shape, drawn</h2>
   <p class="hint">The same funnel every convolutional network since LeCun's draws: resolution shrinks, channel depth grows, then both reverse. Tap any stage for what's actually happening there, not just its code name.</p>
+  <div class="archlegend">
+    <span><i class="dot"></i> self- and cross-attention (the same transformer block, back to back: never one without the other)</span>
+    <span><i class="box"></i> resnets only, no attention at all</span>
+  </div>
   <figure class="archfig">
-    <svg viewBox="0 0 924 200" role="img" aria-label="SD 1.5's UNet drawn as a funnel: resolution shrinks from 64 to 8 through four down blocks, stays at 8 through the bottleneck mid block, then grows back to 64 through four up blocks and conv_out." id="archsvg">
+    <svg viewBox="0 0 924 200" role="img" aria-label="SD 1.5's UNet drawn as a funnel: resolution shrinks from 64 to 8 through four down blocks, stays at 8 through the bottleneck mid block, then grows back to 64 through four up blocks and conv_out. A dot marks every block that has both self- and cross-attention: down blocks 1 to 3, the mid block, and up blocks 2 to 4. conv_in, down block 4, up block 1 and conv_out have no attention at all." id="archsvg">
       <text x="72" y="14" class="archcap" text-anchor="middle">IN</text>
-      <g class="archnode" data-stage="in" tabindex="0" role="button" aria-label="conv_in"><rect x="40" y="58" width="64" height="72"></rect></g>
+      <g class="archnode" data-stage="in" tabindex="0" role="button" aria-label="conv_in, no attention"><rect x="40" y="58" width="64" height="72"></rect></g>
       <text x="72" y="148" class="archcap" text-anchor="middle">64²</text>
       <text x="72" y="160" class="archcap" text-anchor="middle">320ch</text>
       <text x="111" y="95" class="archarrow">&gt;</text>
 
       <text x="150" y="14" class="archcap" text-anchor="middle">D1</text>
-      <g class="archnode" data-stage="d1" tabindex="0" role="button" aria-label="down block 1"><rect x="118" y="74" width="64" height="56"></rect></g>
+      <g class="archnode" data-stage="d1" tabindex="0" role="button" aria-label="down block 1, has self- and cross-attention"><rect x="118" y="74" width="64" height="56"></rect><circle class="archattn" cx="172" cy="84" r="4"></circle></g>
       <text x="150" y="148" class="archcap" text-anchor="middle">32²</text>
       <text x="150" y="160" class="archcap" text-anchor="middle">320ch</text>
       <text x="189" y="95" class="archarrow">&gt;</text>
 
       <text x="228" y="14" class="archcap" text-anchor="middle">D2</text>
-      <g class="archnode" data-stage="d2" tabindex="0" role="button" aria-label="down block 2"><rect x="196" y="90" width="64" height="40"></rect></g>
+      <g class="archnode" data-stage="d2" tabindex="0" role="button" aria-label="down block 2, has self- and cross-attention"><rect x="196" y="90" width="64" height="40"></rect><circle class="archattn" cx="250" cy="100" r="4"></circle></g>
       <text x="228" y="148" class="archcap" text-anchor="middle">16²</text>
       <text x="228" y="160" class="archcap" text-anchor="middle">640ch</text>
       <text x="267" y="95" class="archarrow">&gt;</text>
 
       <text x="306" y="14" class="archcap" text-anchor="middle">D3</text>
-      <g class="archnode" data-stage="d3" tabindex="0" role="button" aria-label="down block 3"><rect x="274" y="104" width="64" height="26"></rect></g>
+      <g class="archnode" data-stage="d3" tabindex="0" role="button" aria-label="down block 3, has self- and cross-attention"><rect x="274" y="104" width="64" height="26"></rect><circle class="archattn" cx="328" cy="114" r="4"></circle></g>
       <text x="306" y="148" class="archcap" text-anchor="middle">8²</text>
       <text x="306" y="160" class="archcap" text-anchor="middle">1280ch</text>
       <text x="345" y="95" class="archarrow">&gt;</text>
 
       <text x="384" y="14" class="archcap" text-anchor="middle">D4</text>
-      <g class="archnode" data-stage="d4" tabindex="0" role="button" aria-label="down block 4"><rect x="352" y="104" width="64" height="26"></rect></g>
+      <g class="archnode" data-stage="d4" tabindex="0" role="button" aria-label="down block 4, resnets only, no attention"><rect x="352" y="104" width="64" height="26"></rect></g>
       <text x="384" y="148" class="archcap" text-anchor="middle">8²</text>
       <text x="384" y="160" class="archcap" text-anchor="middle">1280ch</text>
       <text x="423" y="95" class="archarrow">&gt;</text>
 
       <text x="462" y="14" class="archcap" text-anchor="middle">MID</text>
-      <g class="archnode mid" data-stage="mid" tabindex="0" role="button" aria-label="mid block, the bottleneck"><rect x="430" y="104" width="64" height="26"></rect></g>
+      <g class="archnode mid" data-stage="mid" tabindex="0" role="button" aria-label="mid block, the bottleneck, has self- and cross-attention"><rect x="430" y="104" width="64" height="26"></rect><circle class="archattn" cx="484" cy="114" r="4"></circle></g>
       <text x="462" y="148" class="archcap" text-anchor="middle">8²</text>
       <text x="462" y="160" class="archcap" text-anchor="middle">1280ch</text>
       <text x="501" y="95" class="archarrow">&gt;</text>
 
       <text x="540" y="14" class="archcap" text-anchor="middle">U1</text>
-      <g class="archnode" data-stage="u1" tabindex="0" role="button" aria-label="up block 1"><rect x="508" y="90" width="64" height="40"></rect></g>
+      <g class="archnode" data-stage="u1" tabindex="0" role="button" aria-label="up block 1, resnets only, no attention"><rect x="508" y="90" width="64" height="40"></rect></g>
       <text x="540" y="148" class="archcap" text-anchor="middle">16²</text>
       <text x="540" y="160" class="archcap" text-anchor="middle">1280ch</text>
       <text x="579" y="95" class="archarrow">&gt;</text>
 
       <text x="618" y="14" class="archcap" text-anchor="middle">U2</text>
-      <g class="archnode" data-stage="u2" tabindex="0" role="button" aria-label="up block 2"><rect x="586" y="74" width="64" height="56"></rect></g>
+      <g class="archnode" data-stage="u2" tabindex="0" role="button" aria-label="up block 2, has self- and cross-attention"><rect x="586" y="74" width="64" height="56"></rect><circle class="archattn" cx="640" cy="84" r="4"></circle></g>
       <text x="618" y="148" class="archcap" text-anchor="middle">32²</text>
       <text x="618" y="160" class="archcap" text-anchor="middle">640ch</text>
       <text x="657" y="95" class="archarrow">&gt;</text>
 
       <text x="696" y="14" class="archcap" text-anchor="middle">U3</text>
-      <g class="archnode" data-stage="u3" tabindex="0" role="button" aria-label="up block 3"><rect x="664" y="58" width="64" height="72"></rect></g>
+      <g class="archnode" data-stage="u3" tabindex="0" role="button" aria-label="up block 3, has self- and cross-attention"><rect x="664" y="58" width="64" height="72"></rect><circle class="archattn" cx="718" cy="68" r="4"></circle></g>
       <text x="696" y="148" class="archcap" text-anchor="middle">64²</text>
       <text x="696" y="160" class="archcap" text-anchor="middle">320ch</text>
       <text x="735" y="95" class="archarrow">&gt;</text>
 
       <text x="774" y="14" class="archcap" text-anchor="middle">U4</text>
-      <g class="archnode" data-stage="u4" tabindex="0" role="button" aria-label="up block 4"><rect x="742" y="58" width="64" height="72"></rect></g>
+      <g class="archnode" data-stage="u4" tabindex="0" role="button" aria-label="up block 4, has self- and cross-attention"><rect x="742" y="58" width="64" height="72"></rect><circle class="archattn" cx="796" cy="68" r="4"></circle></g>
       <text x="774" y="148" class="archcap" text-anchor="middle">64²</text>
       <text x="774" y="160" class="archcap" text-anchor="middle">320ch</text>
       <text x="813" y="95" class="archarrow">&gt;</text>
 
       <text x="852" y="14" class="archcap" text-anchor="middle">OUT</text>
-      <g class="archnode" data-stage="out" tabindex="0" role="button" aria-label="conv_out"><rect x="820" y="58" width="64" height="72"></rect></g>
+      <g class="archnode" data-stage="out" tabindex="0" role="button" aria-label="conv_out, no attention"><rect x="820" y="58" width="64" height="72"></rect></g>
       <text x="852" y="148" class="archcap" text-anchor="middle">64²</text>
       <text x="852" y="160" class="archcap" text-anchor="middle">4ch</text>
 
