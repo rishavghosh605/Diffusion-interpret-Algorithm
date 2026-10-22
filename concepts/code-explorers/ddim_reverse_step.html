@@ -356,6 +356,7 @@ dl.terms dt:last-of-type,dl.terms dd:last-of-type{border-bottom:0}
   <h3 class="glh">Diffusion terms</h3><p class="glsub">The ideas the math is built from.</p>
   <dl class="terms">
     <dt id="gl-forward">Forward process, survey Eq. 3</dt><dd>The closed form that skips straight from \(x_0\) to any \(x_t\): \(x_t=\sqrt{\bar\alpha_t}\,x_0+\sqrt{1-\bar\alpha_t}\,\epsilon_t\). Inverting this for \(x_0\) is exactly derivation 1 below, and exactly what lines 455 to 457 compute.</dd>
+    <dt id="gl-schedule">Per-step \(\alpha_t,\beta_t\) versus cumulative \(\bar\alpha_t,\bar\beta_t\)</dt><dd>The noise schedule fixes \(\beta_t\) directly, one value per training timestep (SD 1.5: \(\sqrt{\beta_t}\) linear from \(\sqrt{0.00085}\) to \(\sqrt{0.012}\) over 1000 steps); \(\alpha_t:=1-\beta_t\) is just that one step's complement, how much signal a single forward step keeps. \(\bar\alpha_t:=\prod_{i=1}^t\alpha_i\) is the cumulative product of every per-step \(\alpha_i\) up to \(t\), how much signal survives from \(x_0\) all the way to \(x_t\); \(\bar\beta_t:=1-\bar\alpha_t\) is its complement, this page's own shorthand, not the same number as any single \(\beta_t\). Both pairs satisfy the same "1 minus the other" relation at their own scale, which is the easy place to mix them up.</dd>
     <dt id="gl-x0">Predicted \(x_0\), \(\hat x_0\)</dt><dd>The network's one-shot guess at the clean image, computed from \(x_t\) and \(\hat\epsilon\) without taking any reverse steps. Code name <code>pred_original_sample</code>. Clipped to \([-1,1]\) by default (<code>clip_sample=True</code>) before being used further.</dd>
     <dt id="gl-ddimupdate">DDIM's reverse step, Song et al. 2021, Eq. 12</dt><dd>\(x_{t-1}=\sqrt{\bar\alpha_{t-1}}\,\hat x_0+\sqrt{1-\bar\alpha_{t-1}-\sigma_t^2}\,\hat\epsilon+\sigma_t\,z\), \(z\sim\mathcal N(0,I)\). Lines 488 and 491 compute the \(\eta=0\) case, where \(\sigma_t=0\) and the \(\sigma_t z\) term drops out entirely: no \(z\) is ever drawn. Not in the survey, which only states Ho et al.'s DDPM update (Eq. 6); the survey's glossary entry on this page's series notes DDIM and DDPM share the same trained network but differ here.</dd>
     <dt id="gl-eta">\(\eta\) (eta)</dt><dd>The knob that interpolates between DDIM (\(\eta=0\), deterministic, this page) and DDPM (\(\eta=1\), fully stochastic): <code>std_dev_t = eta * variance ** 0.5</code>, line 481. \(0\) by default in <code>__call__</code>. Derivation 3 shows why \(\eta=1\) exactly recovers DDPM's own reverse variance.</dd>
@@ -418,7 +419,7 @@ var T={
   flow:"Computed at line 445 from timestep. Used to index alphas_cumprod at line 449 and passed to self._get_variance at line 480."},
  alpha_prod_t:{name:"alpha_prod_t",sym:R`\bar\alpha_t`,kind:"A number, indexed from the schedule",syms:["s-at"],rows:["x0"],
   looks:function(){return "A scalar, e.g. about 0.0828 at t=981 (SD 1.5's scaled_linear schedule)"},
-  math:R`<p>\(\bar\alpha_t:=\prod_{i=1}^t\alpha_i\), survey Eq. 3's cumulative product, read directly from the precomputed alphas_cumprod table rather than recomputed.</p>`,
+  math:R`<p>\(\bar\alpha_t:=\prod_{i=1}^t\alpha_i\), the cumulative product of every per-step \(\alpha_i\) up to \(t\); survey Eq. 3. Read directly from the precomputed alphas_cumprod table rather than recomputed here.</p>`,
   flow:"Read from self.alphas_cumprod at line 448. Used in the epsilon-branch x̂_0 formula (line 456) and inside self._get_variance."},
  alpha_prod_t_prev:{name:"alpha_prod_t_prev",sym:R`\bar\alpha_{t-1}`,kind:"A number, indexed from the schedule",syms:["s-atp"],rows:["dir","out"],
   looks:function(){return "A scalar, e.g. about 0.0995 at t_prev=961; equals self.final_alpha_cumprod (usually 1.0) when t_prev < 0"},
@@ -426,7 +427,7 @@ var T={
   flow:"Read from self.alphas_cumprod[prev_timestep] at line 449, or self.final_alpha_cumprod at the boundary. Used in the direction term (line 488) and the final combine (line 491)."},
  beta_prod_t:{name:"beta_prod_t",sym:R`\bar\beta_t`,kind:"A number, page's own symbol",syms:["s-bt"],rows:["x0"],
   looks:function(){return "A scalar, 1 minus alpha_prod_t, e.g. about 0.9172 at t=981"},
-  math:R`<p>\(\bar\beta_t:=1-\bar\alpha_t\), the total noise variance remaining at t. Not a symbol the survey defines; this page's own shorthand, matching the code's own name.</p>`,
+  math:R`<p>\(\bar\beta_t:=1-\bar\alpha_t\): a cumulative quantity, not the per-step \(\beta_t\) the schedule itself defines. Easy to conflate since both satisfy "1 minus the matching alpha", at their own scale: per-step, \(\alpha_t:=1-\beta_t\); cumulative, \(\bar\beta_t:=1-\bar\alpha_t\). Not a symbol the survey defines; this page's own shorthand, matching the code's own name.</p>`,
   flow:"Computed at line 451. Used throughout the x̂_0 formulas, lines 456 to 463."},
  pred_type:{name:"self.config.prediction_type",sym:null,kind:"A config string that picks the branch",syms:[],rows:[],
   looks:function(){return pred==="eps"?'"epsilon" (SD 1.5\'s actual default)':'"v_prediction" (shown for contrast; not what SD 1.5 uses)'},
@@ -449,7 +450,7 @@ var T={
   looks:function(){return "A method call, not shown on this page; returns a scalar, e.g. about 0.012 at t=981"},
   math:R`<p>Computes \(\sigma_t(\eta)^2\) (before multiplying by \(\eta\)), Song et al. 2021 Eq. 16. What it actually does is derivation 3.</p>`,
   flow:"Called at line 480 with (timestep, prev_timestep). Returns the value stored in variance."},
- variance:{name:"variance",sym:R`\sigma_t(\eta)^2/\eta^2`,kind:"A number, the result of get_variance",syms:["s-var"],rows:["sig"],
+ variance:{name:"variance",sym:R`\dfrac{\sigma_t(\eta)^2}{\eta^2}`,kind:"A number, the result of get_variance",syms:["s-var"],rows:["sig"],
   looks:function(){return "A scalar, e.g. about 0.012 at t=981 (before multiplying by eta)"},
   math:R`<p>The variance DDIM would use if \(\eta=1\) (full DDPM-equivalent noise). Only matters once multiplied by \(\eta\), line 481.</p>`,
   flow:"Written at line 480. Read once, at line 481, to build std_dev_t."},
@@ -661,7 +662,7 @@ var DERS=[
    [R`x_t=\sqrt{\bar\alpha_t}\,x_0+\sqrt{1-\bar\alpha_t}\,\epsilon_t`,"Survey Eq. 3, the forward process in closed form."],
    [R`x_0=\frac{x_t-\sqrt{1-\bar\alpha_t}\,\epsilon_t}{\sqrt{\bar\alpha_t}}`,"Solve for x_0 algebraically."],
    [R`\hat x_0=\frac{x_t-\sqrt{\bar\beta_t}\,\hat\epsilon}{\sqrt{\bar\alpha_t}}`,"The true noise ε_t is unknown; substitute the network's guess ε̂ = model_output, and write 1-ᾱ_t as β̄_t."],
-   [R`\hat x_0=(x_t-\beta_t^{1/2}\hat\epsilon)\,/\,\alpha_t^{1/2}`,"Same equation, in the code's own variable names: this is exactly line 456."]
+   [R`\hat x_0=\dfrac{x_t-\beta_t^{1/2}\hat\epsilon}{\alpha_t^{1/2}}`,"Same equation, in the code's own variable names: this is exactly line 456."]
   ],
   answer:R`<p>Line 456 is survey Eq. 3 solved for \(x_0\), with \(\epsilon_t\) replaced by the network's prediction. The same inversion appears in the denoising loop page's own derivation 3, reached from a different direction (deriving \(\mu_\theta\) instead of \(\hat x_0\)).</p>`,
   chips:[["pred_original_sample","pred_original_sample"],["model_output","model_output"]]},
@@ -804,7 +805,7 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change",applyLight)
 setInterval(applyLight,5*60*1000);
 
 /* ---------------- glossary links ---------------- */
-var GLP=[[/Eq\. 3\b/,"forward"],[/Eq\. 6\b/,"ddpm"],[/Eq\. 8\b/,"vpred"],[/Song et al\.?(?:\s*\d{4})?(?:['’]s)?\s+Eq\. 16/,"getvariance"],[/Song et al\.?(?:\s*\d{4})?(?:['’]s)?\s+Eq\. 12/,"ddimupdate"],[/\bDDPM(?:Scheduler)?\b/,"ddpm"],[/\bDDIM(?:Scheduler)?\b/,"ddim"],[/\bPNDM(?:Scheduler)?\b/,"pndm"],[/\bη\b|\beta\b(?!_)/,"eta"],[/v_prediction/,"vpred"],[/v-prediction/,"vpred"],[/forward process/i,"forward"],[/predicted x_0|pred_original_sample|\bx̂_0\b/i,"x0"],[/self\._get_variance/,"getvariance"],[/self\._threshold_sample/,"threshold"],[/prediction_type/,"predtype"]];
+var GLP=[[/per-step/i,"schedule"],[/Eq\. 3\b/,"forward"],[/Eq\. 6\b/,"ddpm"],[/Eq\. 8\b/,"vpred"],[/Song et al\.?(?:\s*\d{4})?(?:['’]s)?\s+Eq\. 16/,"getvariance"],[/Song et al\.?(?:\s*\d{4})?(?:['’]s)?\s+Eq\. 12/,"ddimupdate"],[/\bDDPM(?:Scheduler)?\b/,"ddpm"],[/\bDDIM(?:Scheduler)?\b/,"ddim"],[/\bPNDM(?:Scheduler)?\b/,"pndm"],[/\bη\b|\beta\b(?!_)/,"eta"],[/v_prediction/,"vpred"],[/v-prediction/,"vpred"],[/forward process/i,"forward"],[/predicted x_0|pred_original_sample|\bx̂_0\b/i,"x0"],[/self\._get_variance/,"getvariance"],[/self\._threshold_sample/,"threshold"],[/prediction_type/,"predtype"]];
 function linkTerms(root){
   var used={},walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:function(n){
     var p=n.parentElement;if(!p||p.closest("code,a,button,.gl,.looks,mjx-container,dialog,script,style"))return NodeFilter.FILTER_REJECT;return NodeFilter.FILTER_ACCEPT}});
