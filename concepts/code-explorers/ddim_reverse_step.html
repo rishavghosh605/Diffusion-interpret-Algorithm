@@ -178,9 +178,10 @@ ol.steps .why{grid-column:2;font:400 13.5px/19px var(--sans);color:var(--muted)}
 .prov p{margin:0 0 6px}
 .closer{display:none}
 @media (max-width:900px){
-  .inspzone{position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));max-height:52vh;overflow:auto;z-index:5;background:var(--card);box-shadow:var(--shadow-lift);border-radius:22px;padding:8px;transform:translateY(115%);transition:transform .25s ease;visibility:hidden}
+  .inspzone{position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));max-height:78vh;overflow:auto;z-index:5;background:var(--card);box-shadow:var(--shadow-lift);border-radius:22px;padding:8px;transform:translateY(115%);transition:transform .25s ease;visibility:hidden}
   .inspzone.open{transform:none;visibility:visible}
   .inspzone .card{border:0}
+  .inspzone::after{content:"";position:sticky;display:block;left:0;right:0;bottom:0;height:28px;margin-top:-28px;background:linear-gradient(to bottom,transparent,var(--card));pointer-events:none}
   .closer{display:block;margin:4px 8px 0 auto;font:500 13px/18px var(--sans);border:1px solid var(--line-strong);background:transparent;color:var(--ink);padding:4px 12px;border-radius:999px;cursor:pointer}
   .wrap{padding-bottom:120px}
 }
