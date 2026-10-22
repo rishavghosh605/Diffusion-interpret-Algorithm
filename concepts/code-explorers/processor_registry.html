@@ -518,6 +518,7 @@ function refreshDynamic(){
     var n=p.querySelector("[data-note]");if(n){n.textContent=typeof t.note==="function"?t.note():t.note;linkTerms(n);linkLines(n)}
   });
   document.getElementById("sigcap").textContent=pred==="single"?"Right now: one processor instance. Line 87's isinstance check is false; every attention layer gets the exact same object, line 88.":"Right now: a dict, one entry per attention layer's exact dotted name. Line 87's isinstance check is true; each layer pops its own entry out, line 90.";
+  MathJax.typesetPromise().then(paint).catch(function(e){console.error(e)});
 }
 
 /* ---------------- linking ---------------- */

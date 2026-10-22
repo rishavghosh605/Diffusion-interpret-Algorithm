@@ -559,12 +559,15 @@ document.getElementById("code").innerHTML=CODE.map(function(l){return '<div clas
 
 /* ---------------- math rows ---------------- */
 var ROWS={
- x0:{tex:R`\class{s-x0}{\hat x_0}=\dfrac{\class{s-xt}{x_t}-\sqrt{\class{s-bt}{\bar\beta_t}}\;\class{s-m}{\hat\epsilon}}{\sqrt{\class{s-at}{\bar\alpha_t}}}`,where:"lines 455 to 457, epsilon mode",lines:[455,457],tok:"pred_original_sample"},
+ x0:{tex:function(){return pred==="eps"?R`\class{s-x0}{\hat x_0}=\dfrac{\class{s-xt}{x_t}-\sqrt{\class{s-bt}{\bar\beta_t}}\;\class{s-m}{\hat\epsilon}}{\sqrt{\class{s-at}{\bar\alpha_t}}}`:R`\class{s-x0}{\hat x_0}=\sqrt{\class{s-at}{\bar\alpha_t}}\,\class{s-xt}{x_t}-\sqrt{\class{s-bt}{\bar\beta_t}}\,\class{s-m}{\hat y}`},
+  where:function(){return pred==="eps"?"lines 455 to 457, epsilon mode":"lines 462 to 463, v_prediction mode"},
+  lines:function(){return pred==="eps"?[455,457]:[462,463]},tok:"pred_original_sample"},
  sig:{tex:R`\class{s-sig}{\sigma_t(\eta)}=\eta\,\sqrt{\class{s-var}{\sigma_t(1)^2}}\ \ \big(=0\text{ at }\eta=0\big)`,where:"lines 480 to 481",lines:[480,481],tok:"std_dev_t"},
  dir:{tex:R`\class{s-dir}{D_t}=\sqrt{1-\class{s-atp}{\bar\alpha_{t-1}}-\class{s-sig}{\sigma_t(\eta)}^2}\;\class{s-eps}{\hat\epsilon}`,where:"line 488",lines:[488,488],tok:"pred_sample_direction"},
  out:{tex:R`\class{s-xtm1}{x_{t-1}}=\sqrt{\class{s-atp}{\bar\alpha_{t-1}}}\;\hat x_0+D_t`,where:"line 491, Song et al. Eq. 12 at η=0",lines:[491,491],tok:"prev_sample"}
 };
-document.getElementById("mrows").innerHTML=Object.keys(ROWS).map(function(k){return '<div class="mrow" data-row="'+k+'" tabindex="0" role="button"><div class="eq">\\['+ROWS[k].tex+'\\]</div><span class="where">'+ROWS[k].where+'</span></div>'}).join("");
+function renderRows(){document.getElementById("mrows").innerHTML=Object.keys(ROWS).map(function(k){var r=ROWS[k];return '<div class="mrow" data-row="'+k+'" tabindex="0" role="button"><div class="eq">\\['+(typeof r.tex==="function"?r.tex():r.tex)+'\\]</div><span class="where">'+(typeof r.where==="function"?r.where():r.where)+'</span></div>'}).join("")}
+renderRows();
 
 /* ---------------- inspector panels (built once) ---------------- */
 var insp=document.getElementById("insp");
@@ -601,8 +604,10 @@ function refreshDynamic(){
     var mel=p.querySelector("[data-math]");mel.innerHTML=typeof t.math==="function"?t.math():t.math;
     var n=p.querySelector("[data-note]");if(n){n.textContent=typeof t.note==="function"?t.note():t.note;linkTerms(n);linkLines(n)}
   });
+  renderRows();
   document.getElementById("sigcap").textContent=pred==="eps"?"Right now: epsilon mode (SD 1.5's actual default). The top case of the first row applies.":"Right now: v_prediction mode, shown for contrast. The bottom case of the first row applies; model_output means v, not epsilon.";
   drawViz();
+  MathJax.typesetPromise().then(paint).catch(function(e){console.error(e)});
 }
 
 /* ---------------- linking ---------------- */
@@ -614,7 +619,7 @@ function paint(){
   document.querySelectorAll("mjx-container g.on").forEach(function(g){g.classList.remove("on")});
   t.syms.forEach(function(c){mathEls(c).forEach(function(g){g.classList.add("on")})});
   document.querySelectorAll(".mrow").forEach(function(r){r.classList.toggle("lit",t.rows.indexOf(r.dataset.row)>=0)});
-  var lit={};t.rows.forEach(function(k){for(var n=ROWS[k].lines[0];n<=ROWS[k].lines[1];n++)lit[n]=1});
+  var lit={};t.rows.forEach(function(k){var ln=typeof ROWS[k].lines==="function"?ROWS[k].lines():ROWS[k].lines;for(var n=ln[0];n<=ln[1];n++)lit[n]=1});
   document.querySelectorAll(".ln").forEach(function(l){l.classList.toggle("lit",!!lit[l.dataset.ln])});
   document.querySelectorAll(".panel").forEach(function(p){p.classList.toggle("show",p.dataset.id===id)});
 }

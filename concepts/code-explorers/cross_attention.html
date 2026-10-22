@@ -509,6 +509,7 @@ function refreshDynamic(){
     var n=p.querySelector("[data-note]");if(n){n.textContent=typeof t.note==="function"?t.note():t.note;linkTerms(n);linkLines(n)}
   });
   document.getElementById("sigcap").textContent=pred==="cross"?"Right now: cross-attention. encoder_hidden_states holds the prompt; key and value come from it.":"Right now: self-attention. encoder_hidden_states is None, reassigned to hidden_states at line 1144; key and value come from the image's own features.";
+  MathJax.typesetPromise().then(paint).catch(function(e){console.error(e)});
 }
 
 /* ---------------- linking ---------------- */
